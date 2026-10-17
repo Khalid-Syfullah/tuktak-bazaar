@@ -112,7 +112,14 @@ const answerKey = (a: Fresh) => `${a.campaign?.id ?? 'none'}@${a.refreshAt}`;
  * in preview.
  */
 export function useFreshCampaign(initial: CurrentCampaign, now: number | null, preview: boolean) {
-  const [answer, setAnswer] = useState<Fresh>({ campaign: initial.campaign, refreshAt: initial.refreshAt ?? initial.campaign?.refreshAt ?? null });
+  const fromPage = (d: CurrentCampaign): Fresh => ({ campaign: d.campaign, refreshAt: d.refreshAt ?? d.campaign?.refreshAt ?? null });
+  const [source, setSource] = useState(initial);
+  const [answer, setAnswer] = useState<Fresh>(() => fromPage(initial));
+  if (source !== initial) {
+    // The page supplied new data (an edit in the admin preview, or a fresh server render): start from it.
+    setSource(initial);
+    setAnswer(fromPage(initial));
+  }
   const due = !preview && answer.refreshAt !== null && now !== null && now >= Date.parse(answer.refreshAt);
   const dueFor = due ? answerKey(answer) : null;
   useEffect(() => {
@@ -218,6 +225,8 @@ export function useCampaignMe(id: string, enabled: boolean, day: string | null =
     if (day) seenDay.current = day;
   }, [key, id, active, day]);
   return {
+    /** Which campaign and account this state belongs to, for keying parts with their own local state. */
+    owner: key,
     state: active ? state : ({ status: 'out' } as MeState),
     refresh: () => loadMe(key, id, true),
     /** Update locally after an action, without another request. */

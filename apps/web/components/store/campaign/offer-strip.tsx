@@ -29,7 +29,7 @@ export function OfferStrip({ data, preview = false }: { data: CurrentCampaign; p
       role="region"
       aria-label="চলমান অফার"
     >
-      {reduced ? <Rotating items={c.ticker} /> : <Marquee items={c.ticker} preview={preview} />}
+      {reduced ? <Rotating key={c.id} items={c.ticker} /> : <Marquee key={c.id} items={c.ticker} preview={preview} />}
     </div>
   );
 }
@@ -88,7 +88,8 @@ function Rotating({ items }: { items: CampaignView['ticker'] }) {
     const id = setInterval(() => setI((n) => (n + 1) % items.length), 5000);
     return () => clearInterval(id);
   }, [items.length]);
-  const it = items[i];
+  // The list can shrink while this is mounted (an edit in the preview), so wrap the index.
+  const it = items[i % items.length];
   return (
     <div key={i} className="cmp-fade flex h-9 items-center justify-center gap-2 px-4 text-center">
       <Megaphone className="size-3.5 shrink-0 opacity-80" aria-hidden />

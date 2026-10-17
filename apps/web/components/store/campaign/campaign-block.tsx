@@ -24,6 +24,8 @@ function Block({ data, preview }: { data: CurrentCampaign; preview: boolean }) {
   const now = useServerNow(data.serverNow, preview);
   const { view: c, due } = useFreshCampaign(data, now, preview);
   const me = useCampaignMe(c?.id ?? '', !preview && !!c, now === null ? null : dhakaDay(now));
+  // The game keeps its own result on screen, so it starts over for each shopper and each Dhaka day.
+  const gameKey = `${me.owner}:${dhakaDay(now ?? Date.parse(data.serverNow))}`;
   if (!c) return null;
   const phase = now === null ? c.status : phaseAt(now, c.startsAt, c.endsAt);
   if (phase === 'ENDED') return null;
@@ -36,7 +38,7 @@ function Block({ data, preview }: { data: CurrentCampaign; preview: boolean }) {
       {(showDeals || showGame) && (
         <div className={clsx('grid gap-3', showDeals && showGame && 'lg:grid-cols-[minmax(0,1fr)_300px]')}>
           {showDeals && <DealCards deals={c.deals} preview={preview} />}
-          {showGame && <DailyGame c={c} preview={preview} me={me} />}
+          {showGame && <DailyGame key={gameKey} c={c} preview={preview} me={me} />}
         </div>
       )}
     </section>
