@@ -177,7 +177,7 @@ export class AdminCampaignsController {
   @Audit({ action: 'campaign.update', entity: 'campaign', summary: ({ body }) => `Updated campaign "${body.title}"` })
   @Patch(':id')
   async update(@Param('id') id: string, @Body() dto: CampaignDto) {
-    await this.check(dto);
+    await this.check(dto, id);
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await this.campaigns.full(id, tx);
@@ -380,7 +380,7 @@ export class AdminCampaignsController {
    * (active, collectible, overlapping the dates) and the game's reward count are only checked when the
    * campaign is switched on, so turning a campaign off always works even if a voucher changed since.
    */
-  private async check(dto: CampaignDto) {
+  private async check(dto: CampaignDto, campaignId?: string) {
     const startsAt = new Date(dto.startsAt);
     const endsAt = new Date(dto.endsAt);
     const active = dto.isActive;
@@ -409,14 +409,21 @@ export class AdminCampaignsController {
       if (dto.gameStyle === 'SPIN_WHEEL' && (dto.rewards.length < 4 || dto.rewards.length > 10)) throw new BadRequestException('A spin wheel needs 4 to 10 rewards');
       if (dto.rewards.length < 2) throw new BadRequestException('The daily game needs at least 2 rewards');
     }
-    const voucherIds = dto.rewards.filter((r) => r.kind === 'VOUCHER').map((r) => r.voucherId as string);
-    if (voucherIds.length) {
-      const vouchers = await this.prisma.voucher.findMany({ where: { id: { in: voucherIds } } });
-      for (const id of voucherIds) {
-        const v = vouchers.find((x) => x.id === id);
+    const voucherRewards = dto.rewards.filter((r) => r.kind === 'VOUCHER');
+    if (voucherRewards.length) {
+      const vouchers = await this.prisma.voucher.findMany({ where: { id: { in: voucherRewards.map((r) => r.voucherId as string) } } });
+      // A reward that has been won can't change its voucher, so it may keep one that has since been switched off
+      // or has expired (the draw leaves it out). Otherwise the campaign could never be saved again.
+      const won = campaignId
+        ? await this.prisma.campaignReward.findMany({ where: { campaignId, givenCount: { gt: 0 } }, select: { id: true, voucherId: true } })
+        : [];
+      const retained = (r: RewardDto) => won.some((w) => w.id === r.id && w.voucherId === r.voucherId);
+      for (const r of voucherRewards) {
+        const v = vouchers.find((x) => x.id === r.voucherId);
         if (!v) throw new BadRequestException('A voucher used as a reward no longer exists');
-        if (active && !v.isActive) throw new BadRequestException(`Voucher ${v.code} is switched off, so it can't be a reward`);
-        if (active && !overlaps(v.startsAt, v.endsAt)) throw new BadRequestException(`Voucher ${v.code} isn't valid at any time during this campaign`);
+        if (!active || retained(r)) continue;
+        if (!v.isActive) throw new BadRequestException(`Voucher ${v.code} is switched off, so it can't be a reward`);
+        if (!overlaps(v.startsAt, v.endsAt)) throw new BadRequestException(`Voucher ${v.code} isn't valid at any time during this campaign`);
       }
     }
   }

@@ -781,6 +781,21 @@ async function main() {
       changePrize.status === 400 && changeWording.status === 200,
       [changePrize.status, changePrize.data?.message, changeWording.status, changeWording.data?.message],
     );
+    const wonReward = await prisma.campaignReward.findFirstOrThrow({ where: { campaignId: voucherGame.id } });
+    await prisma.voucher.update({ where: { id: freeship.id }, data: { isActive: false } });
+    const voucherGameForm = (extra: Record<string, unknown>[]) =>
+      form({
+        slug: 'e2e-voucher', title: 'খেলা পরীক্ষা ২', gameEnabled: true, startsAt: voucherGame.startsAt.toISOString(), endsAt: voucherGame.endsAt.toISOString(),
+        rewards: [{ id: wonReward.id, kind: 'VOUCHER', voucherId: freeship.id, label: wonReward.label, weight: wonReward.weight, stock: wonReward.stock }, ...extra],
+      });
+    const keepWon = await nusrat.patch(`/admin/campaigns/${voucherGame.id}`, voucherGameForm([{ kind: 'NONE', label: 'আবার চেষ্টা করুন', weight: 1 }]));
+    const addOff = await nusrat.patch(`/admin/campaigns/${voucherGame.id}`, voucherGameForm([{ kind: 'VOUCHER', voucherId: freeship.id, label: 'ফ্রি ডেলিভারি', weight: 1 }]));
+    await prisma.voucher.update({ where: { id: freeship.id }, data: { isActive: true } });
+    check(
+      'a won reward may keep a voucher switched off since, but a new reward may not use it',
+      wonReward.givenCount > 0 && keepWon.status === 200 && addOff.status === 400,
+      [wonReward.givenCount, keepWon.status, keepWon.data?.message, addOff.status, addOff.data?.message],
+    );
     await prisma.campaign.updateMany({ where: { slug: { startsWith: 'e2e-' } }, data: { isActive: false } });
   }
 
