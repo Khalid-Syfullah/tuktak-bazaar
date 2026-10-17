@@ -25,7 +25,7 @@ comes from **Admin → Settings → Store name**; the Bangla wordmark is in `app
 | API | NestJS 11, Prisma 6, PostgreSQL 16 (with `pg_trgm` for fuzzy search) |
 | Web | Next.js 16 (App Router), React 19, Tailwind CSS 4 |
 | Jobs | `@nestjs/schedule` inside the API (unpaid orders, payments, alerts, cart reminders, courier status) |
-| Tests | `apps/api/test/e2e.ts` — 160 checks over checkout, payments, stock races, returns, staff permissions, couriers, reports, imports, alerts, support and promo campaigns |
+| Tests | `apps/api/test/e2e.ts` — 161 checks over checkout, payments, stock races, returns, staff permissions, couriers, reports, imports, alerts, support and promo campaigns |
 
 ```
 tuktak-bazaar/

@@ -593,6 +593,17 @@ async function main() {
       nothingYet.campaign === null && Date.parse(nothingYet.refreshAt) === soon.getTime(),
       nothingYet,
     );
+    // Starts over a week out, but its week-long teaser begins at `soon`.
+    const far = await prisma.campaign.create({
+      data: { slug: 'e2e-far', title: 'দূরের অফার', startsAt: new Date(soon.getTime() + 168 * 3600_000), endsAt: new Date(soon.getTime() + 200 * 3600_000), teaserHours: 168, priority: 70 },
+    });
+    const beforeFar = (await new Client().get('/campaigns/current')).data.campaign;
+    await prisma.campaign.update({ where: { id: far.id }, data: { isActive: false } });
+    check(
+      'a campaign starting over a week out still counts when its teaser is near',
+      beforeFar?.id === live.id && Date.parse(beforeFar.refreshAt) === soon.getTime(),
+      [beforeFar?.refreshAt, soon.toISOString()],
+    );
     const pickedVariant = await prisma.productVariant.findFirstOrThrow({ where: { isActive: true, stock: { gt: 0 }, product: { status: 'ACTIVE' }, flashItems: { none: {} } } });
     const futureSale = await prisma.flashSale.create({
       data: { title: 'e2e future sale', startsAt: new Date(Date.now() + 3 * 3600_000), endsAt: new Date(Date.now() + 5 * 3600_000), items: { create: { variantId: pickedVariant.id, flashPrice: Math.round(pickedVariant.price / 2), quantityLimit: 10 } } },

@@ -96,8 +96,8 @@ function fetchCurrent(): Promise<CurrentCampaign> {
   return inflight;
 }
 
-const ATTEMPTS = 5;
-const RETRY_MS = 2000;
+/** 2 s for the first few tries (the device clock a moment early), then doubling up to a minute. */
+const retryDelay = (n: number) => (n <= 5 ? 2000 : Math.min(60_000, 2000 * 2 ** (n - 5)));
 
 type Fresh = { campaign: CampaignView | null; refreshAt: string | null };
 const answerKey = (a: Fresh) => `${a.campaign?.id ?? 'none'}@${a.refreshAt}`;
@@ -125,25 +125,45 @@ export function useFreshCampaign(initial: CurrentCampaign, now: number | null, p
   useEffect(() => {
     if (!dueFor) return;
     let cancelled = false;
+    let busy = false;
+    let tries = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const retry = (n: number) => {
-      if (!cancelled && n < ATTEMPTS) timer = setTimeout(() => attempt(n + 1), RETRY_MS);
+    // Keeps trying until fresh data arrives (offline or a down API only slows it down), and tries again at
+    // once when the connection comes back or the tab is shown again. One request at a time.
+    const retry = () => {
+      if (!cancelled) timer = setTimeout(attempt, retryDelay(tries));
     };
-    const attempt = (n: number) => {
-      fetchCurrent()
-        .then((d) => {
+    const attempt = () => {
+      if (busy || cancelled) return;
+      busy = true;
+      clearTimeout(timer);
+      tries++;
+      fetchCurrent().then(
+        (d) => {
+          busy = false;
           if (cancelled) return;
           const next: Fresh = { campaign: d.campaign, refreshAt: d.refreshAt ?? d.campaign?.refreshAt ?? null };
           // The same answer means the server hasn't reached the moment yet.
-          if (answerKey(next) === dueFor) retry(n);
+          if (answerKey(next) === dueFor) retry();
           else setAnswer(next);
-        })
-        .catch(() => retry(n));
+        },
+        () => {
+          busy = false;
+          retry();
+        },
+      );
     };
-    attempt(1);
+    const retryNow = () => {
+      if (!document.hidden) attempt();
+    };
+    attempt();
+    window.addEventListener('online', retryNow);
+    document.addEventListener('visibilitychange', retryNow);
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      window.removeEventListener('online', retryNow);
+      document.removeEventListener('visibilitychange', retryNow);
     };
   }, [dueFor]);
   return { view: answer.campaign, due };

@@ -155,10 +155,12 @@ export class CampaignsService {
    * `refreshAt` is when this answer next changes; with no campaign to show, that's the next teaser starting.
    */
   async current(now = new Date()): Promise<{ campaign: CampaignView | null; refreshAt: Date | null }> {
+    // Every campaign that hasn't ended counts, however far off: any of them can start its teaser before the
+    // next refresh. Only the few columns needed to choose are read; the chosen one is then loaded in full.
     const candidates = await this.prisma.campaign.findMany({
-      where: { isActive: true, endsAt: { gt: now }, startsAt: { lte: new Date(now.getTime() + 168 * HOUR) } },
+      where: { isActive: true, endsAt: { gt: now } },
       orderBy: [{ priority: 'desc' }, { startsAt: 'asc' }],
-      include: FULL_INCLUDE,
+      select: { id: true, startsAt: true, teaserHours: true },
     });
     const teaserStart = (c: (typeof candidates)[number]) => new Date(c.startsAt.getTime() - c.teaserHours * HOUR);
     const index = candidates.findIndex((c) => teaserStart(c) <= now);
@@ -168,7 +170,7 @@ export class CampaignsService {
     }
     // A higher-priority campaign whose teaser hasn't started yet takes over when it does.
     const takeovers = candidates.slice(0, index).map(teaserStart);
-    const campaign = await this.view(toInput(candidates[index]), now, takeovers);
+    const campaign = await this.view(toInput(await this.full(candidates[index].id)), now, takeovers);
     return { campaign, refreshAt: campaign.refreshAt };
   }
 
