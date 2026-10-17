@@ -535,9 +535,14 @@ async function main() {
         items: { create: { variantId: dbFlash.variantId, flashPrice: dbFlash.flashPrice - 10, quantityLimit: 5 } },
       },
     });
-    const overlapped = (await new Client().get('/campaigns/current')).data.campaign.deals.find((d: any) => d.productSlug === flashDeal.productSlug);
+    const withOverlap = (await new Client().get('/campaigns/current')).data.campaign;
+    const overlapped = withOverlap.deals.find((d: any) => d.productSlug === flashDeal.productSlug);
     await prisma.flashSale.update({ where: { id: cheaper.id }, data: { isActive: false } });
-    check('with overlapping flash sales, a deal shows the price checkout charges', overlapped?.price === dbFlash.flashPrice - 10 && overlapped?.soldPercent === flashDeal.soldPercent, overlapped);
+    check(
+      'with overlapping flash sales, a deal shows the price checkout charges, and refreshes when the cheaper sale ends',
+      overlapped?.price === dbFlash.flashPrice - 10 && overlapped?.soldPercent === flashDeal.soldPercent && Date.parse(withOverlap.refreshAt) <= cheaper.endsAt.getTime(),
+      { overlapped, refreshAt: withOverlap.refreshAt, cheaperEnds: cheaper.endsAt },
+    );
     const picked = live.deals.find((d: any) => d.soldPercent === null);
     await prisma.product.update({ where: { slug: picked.productSlug }, data: { status: 'DRAFT' } });
     const withoutHidden = (await new Client().get('/campaigns/current')).data.campaign;

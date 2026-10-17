@@ -259,7 +259,9 @@ export class CampaignsService {
       });
       // The price is what the product page and checkout charge (the cheapest running offer, which is usually
       // this sale); the share sold is this sale's.
-      const flash = await this.pricing.activeFlash(items.map((i) => i.variantId), this.prisma, now);
+      const variantIds = items.map((i) => i.variantId);
+      const [flash, saleChanges] = await Promise.all([this.pricing.activeFlash(variantIds, this.prisma, now), this.flashChanges(variantIds, now)]);
+      changes.push(...saleChanges);
       for (const i of items) {
         const sold = i.quantityLimit > 0 ? Math.min(100, Math.round((i.soldQty / i.quantityLimit) * 100)) : 0;
         const info = this.pricing.price(i.variant, flash.get(i.variantId));
@@ -283,15 +285,9 @@ export class CampaignsService {
         where: { id: { in: ids }, isActive: true, product: { status: 'ACTIVE' } },
         include: variantInclude,
       });
-      const [flash, sales] = await Promise.all([
-        this.pricing.activeFlash(variants.map((v) => v.id), this.prisma, now),
-        // Any flash sale on these items changes their price when it starts or ends.
-        this.prisma.flashSaleItem.findMany({
-          where: { variantId: { in: variants.map((v) => v.id) }, flashSale: { isActive: true, endsAt: { gt: now } } },
-          select: { flashSale: { select: { startsAt: true, endsAt: true } } },
-        }),
-      ]);
-      for (const s of sales) changes.push(s.flashSale.startsAt, s.flashSale.endsAt);
+      const variantIds = variants.map((v) => v.id);
+      const [flash, saleChanges] = await Promise.all([this.pricing.activeFlash(variantIds, this.prisma, now), this.flashChanges(variantIds, now)]);
+      changes.push(...saleChanges);
       for (const id of ids) {
         const v = variants.find((x) => x.id === id);
         if (!v || out.length >= MAX_DEALS) continue;
@@ -310,6 +306,16 @@ export class CampaignsService {
       }
     }
     return { deals: out, changes };
+  }
+
+  /** When any flash sale on these variants starts or ends: that's when their checkout price can change. */
+  private async flashChanges(variantIds: string[], now: Date): Promise<Date[]> {
+    if (!variantIds.length) return [];
+    const items = await this.prisma.flashSaleItem.findMany({
+      where: { variantId: { in: variantIds }, flashSale: { isActive: true, endsAt: { gt: now } } },
+      select: { flashSale: { select: { startsAt: true, endsAt: true } } },
+    });
+    return items.flatMap((i) => [i.flashSale.startsAt, i.flashSale.endsAt]);
   }
 
   // ───── The shopper's own state and the daily game ─────
