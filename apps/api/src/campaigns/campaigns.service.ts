@@ -257,16 +257,20 @@ export class CampaignsService {
         orderBy: { soldQty: 'desc' },
         take: MAX_DEALS,
       });
+      // The price is what the product page and checkout charge (the cheapest running offer, which is usually
+      // this sale); the share sold is this sale's.
+      const flash = await this.pricing.activeFlash(items.map((i) => i.variantId), this.prisma, now);
       for (const i of items) {
         const sold = i.quantityLimit > 0 ? Math.min(100, Math.round((i.soldQty / i.quantityLimit) * 100)) : 0;
+        const info = this.pricing.price(i.variant, flash.get(i.variantId));
         seen.add(i.variantId);
         out.push({
           productSlug: i.variant.product.slug,
           title: i.variant.product.title,
           image: i.variant.imageUrl ?? i.variant.product.images[0]?.url ?? null,
-          price: i.flashPrice,
-          regularPrice: i.variant.price,
-          discountPct: pct(i.variant.price, i.flashPrice),
+          price: info.unitPrice,
+          regularPrice: info.originalPrice,
+          discountPct: info.discountPct,
           soldPercent: sold,
           almostGone: sold >= 80,
           soldOut: i.soldQty >= i.quantityLimit || i.variant.stock <= 0,

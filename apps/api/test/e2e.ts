@@ -529,6 +529,15 @@ async function main() {
       flashDeal.price === dbFlash.flashPrice && flashDeal.soldPercent === Math.min(100, Math.round((dbFlash.soldQty / dbFlash.quantityLimit) * 100)),
       flashDeal,
     );
+    const cheaper = await prisma.flashSale.create({
+      data: {
+        title: 'e2e overlapping sale', startsAt: new Date(Date.now() - 60_000), endsAt: new Date(Date.now() + 3600_000),
+        items: { create: { variantId: dbFlash.variantId, flashPrice: dbFlash.flashPrice - 10, quantityLimit: 5 } },
+      },
+    });
+    const overlapped = (await new Client().get('/campaigns/current')).data.campaign.deals.find((d: any) => d.productSlug === flashDeal.productSlug);
+    await prisma.flashSale.update({ where: { id: cheaper.id }, data: { isActive: false } });
+    check('with overlapping flash sales, a deal shows the price checkout charges', overlapped?.price === dbFlash.flashPrice - 10 && overlapped?.soldPercent === flashDeal.soldPercent, overlapped);
     const picked = live.deals.find((d: any) => d.soldPercent === null);
     await prisma.product.update({ where: { slug: picked.productSlug }, data: { status: 'DRAFT' } });
     const withoutHidden = (await new Client().get('/campaigns/current')).data.campaign;

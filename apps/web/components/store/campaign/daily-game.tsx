@@ -2,7 +2,7 @@
 
 import { Gift, Info, X } from 'lucide-react';
 import Link from 'next/link';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useToast } from '@/components/providers';
 import { ApiError, post } from '@/lib/api';
 import type { CampaignView, RewardResult } from '@/lib/campaign';
@@ -32,6 +32,17 @@ export function DailyGame({ c, preview, me }: { c: CampaignView; preview: boolea
   const [phase, setPhase] = useState<GamePhase>('idle');
   const [result, setResult] = useState<RewardResult | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  // The game is remounted at Dhaka midnight (and for another account); a play still finishing then must not
+  // write its result into the new day's state.
+  const alive = useRef(true);
+  const reveal = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      clearTimeout(reveal.current);
+    };
+  }, []);
 
   const played = me.state.status === 'in' && me.state.me.playedToday;
   const shown: RewardResult | null = result ?? (me.state.status === 'in' ? me.state.me.todayReward : null);
@@ -43,9 +54,10 @@ export function DailyGame({ c, preview, me }: { c: CampaignView; preview: boolea
     setMessage(null);
     try {
       const { reward } = await post<{ reward: RewardResult }>(`/campaigns/${c.id}/play`);
+      if (!alive.current) return;
       setResult(reward);
       setPhase('revealing');
-      window.setTimeout(
+      reveal.current = setTimeout(
         () => {
           setPhase('done');
           me.patch((m) => ({ ...m, playedToday: true, todayReward: reward }));
