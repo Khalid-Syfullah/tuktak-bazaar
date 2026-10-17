@@ -739,6 +739,13 @@ async function main() {
       limitPlay.data.reward?.kind === 'NONE' && limitGiven._sum.givenCount === 0,
       limitPlay.data,
     );
+    const delVoucher = await nusrat.del(`/admin/vouchers/${notYet.id}`);
+    check(
+      'deleting a voucher a campaign reward uses switches it off instead',
+      delVoucher.status === 200 && delVoucher.data.deactivated === true && delVoucher.data.reason === 'campaign' &&
+        (await prisma.voucher.findUniqueOrThrow({ where: { id: notYet.id } })).isActive === false,
+      delVoucher.data,
+    );
     const rushRewards = await prisma.campaignReward.findMany({ where: { campaignId: rush.id }, orderBy: { sortOrder: 'asc' } });
     const rushForm = (coins: number, label: string) =>
       form({

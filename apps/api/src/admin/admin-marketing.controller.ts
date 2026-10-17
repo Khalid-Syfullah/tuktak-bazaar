@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Delete, Get, NotFoundException, Param, Patch, Post } from '@nestjs/common';
-import { BannerPlacement, Permission, VoucherType } from '@prisma/client';
+import { BannerPlacement, Permission, Prisma, VoucherType } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -96,12 +96,25 @@ export class AdminMarketingController {
 
   @Delete('vouchers/:id')
   async deleteVoucher(@Param('id') id: string) {
-    const used = await this.prisma.voucherRedemption.count({ where: { voucherId: id } });
-    if (used) {
+    // A voucher that was used, or that a campaign reward hands out, is switched off instead so its history stays
+    // (switched off, it can no longer be won either).
+    const switchOff = async (reason: 'used' | 'campaign') => {
       await this.prisma.voucher.update({ where: { id }, data: { isActive: false } });
-      return { ok: true, deactivated: true };
+      return { ok: true, deactivated: true, reason };
+    };
+    const [used, rewards] = await Promise.all([
+      this.prisma.voucherRedemption.count({ where: { voucherId: id } }),
+      this.prisma.campaignReward.count({ where: { voucherId: id } }),
+    ]);
+    if (used) return switchOff('used');
+    if (rewards) return switchOff('campaign');
+    try {
+      await this.prisma.voucher.delete({ where: { id } });
+    } catch (err) {
+      // A campaign reward started using it a moment ago.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') return switchOff('campaign');
+      throw err;
     }
-    await this.prisma.voucher.delete({ where: { id } });
     return { ok: true };
   }
 
