@@ -179,7 +179,7 @@ export function CampaignPreview({ id, body, missing, teaserHours }: { id?: strin
             <PreviewFrame key={device} width={device === 'phone' ? PHONE_WIDTH : '100%'} title={`Store preview, ${device === 'phone' ? 'phone' : 'desktop'} width`}>
               {result.campaign ? (
                 <>
-                  <OfferStrip campaign={result.campaign} serverNow={result.serverNow} preview />
+                  <OfferStrip data={result} preview />
                   <div className="mx-auto max-w-[1240px] px-3 py-4 sm:px-4 sm:py-5">
                     <CampaignBlock data={result} preview />
                   </div>

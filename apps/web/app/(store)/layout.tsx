@@ -22,7 +22,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   return (
     <>
       <StoreHeader categories={categories ?? []} supportPhone={store.supportPhone} freeShippingThreshold={info?.freeShippingThreshold ?? 2000} />
-      {promo?.campaign && <OfferStrip key={promo.campaign.id} campaign={promo.campaign} serverNow={promo.serverNow} />}
+      {promo && <OfferStrip key={promo.campaign?.id ?? 'none'} data={promo} />}
       <main className="min-h-[60vh]">{children}</main>
       <StoreFooter categories={categories ?? []} store={store} />
       <BottomNav />

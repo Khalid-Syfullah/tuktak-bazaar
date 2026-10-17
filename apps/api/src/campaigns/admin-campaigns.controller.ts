@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Patch, Post, Query } from '@nestjs/common';
 import { CampaignTheme, GameStyle, Permission, Prisma, RewardKind } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
@@ -183,10 +183,11 @@ export class AdminCampaignsController {
         const existing = await this.campaigns.full(id, tx);
         // Rewards keep their ids so stock already handed out stays counted.
         const keep = new Set(dto.rewards.map((r) => r.id).filter(Boolean));
-        // A play can win a reward while this runs, so removing one, or changing its prize, only goes through
-        // while it is still unwon at the moment of writing (the play's claim checks the prize the same way).
+        // A play can win a reward while this runs, so each write re-checks the award count at the moment of
+        // writing: removing a reward or changing its prize needs it still unwon, and a stock can't drop below
+        // what has been won by then. (The play's claim re-checks the prize and the stored stock the same way.)
         const justWon = (label: string) =>
-          new BadRequestException(`"${label}" was just won by a shopper, so it can't be removed or given a new prize now. Reload the page to see the latest numbers.`);
+          new BadRequestException(`"${label}" was just won by a shopper while you were editing. Reload the page to see the latest numbers, then save again.`);
         for (const old of existing.rewards.filter((r) => !keep.has(r.id))) {
           if (old.givenCount > 0) throw new BadRequestException(`"${old.label}" has already been won ${old.givenCount} times, so it can't be removed. Set its weight to 1 or its stock to ${old.givenCount} instead.`);
           const removed = await tx.campaignReward.deleteMany({ where: { id: old.id, givenCount: 0 } });
@@ -206,11 +207,11 @@ export class AdminCampaignsController {
               `"${current.label}" has already been won ${current.givenCount} times, so its prize can't change. Add a new reward for the new prize, and set this one's stock to ${current.givenCount} to stop it.`,
             );
           }
-          if (current && newPrize) {
-            const changed = await tx.campaignReward.updateMany({ where: { id: current.id, givenCount: 0 }, data: next });
+          if (current) {
+            const awarded = newPrize ? { givenCount: 0 } : next.stock != null ? { givenCount: { lte: next.stock } } : {};
+            const changed = await tx.campaignReward.updateMany({ where: { id: current.id, ...awarded }, data: next });
             if (changed.count !== 1) throw justWon(current.label);
-          } else if (current) await tx.campaignReward.update({ where: { id: current.id }, data: next });
-          else await tx.campaignReward.create({ data: { ...next, campaignId: id } });
+          } else await tx.campaignReward.create({ data: { ...next, campaignId: id } });
         }
         await tx.campaignProduct.deleteMany({ where: { campaignId: id } });
         await tx.campaignTickerItem.deleteMany({ where: { campaignId: id } });
@@ -232,13 +233,19 @@ export class AdminCampaignsController {
   @Audit({ action: 'campaign.delete', entity: 'campaign', summary: ({ result }) => (result?.deactivated ? 'Turned off a played campaign' : 'Deleted a campaign') })
   @Delete(':id')
   async remove(@Param('id') id: string) {
-    const plays = await this.prisma.campaignPlay.count({ where: { campaignId: id } });
-    if (plays) {
-      await this.prisma.campaign.update({ where: { id }, data: { isActive: false } });
-      return { ok: true, deactivated: true };
-    }
-    await this.prisma.campaign.delete({ where: { id } });
-    return { ok: true };
+    return this.prisma.$transaction(async (tx) => {
+      // Lock the campaign first: a play's insert needs a share lock on it, so a first play can't slip in
+      // between the check and the delete (it either finishes first and is counted, or waits and then fails).
+      const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM "Campaign" WHERE id = ${id} FOR UPDATE`;
+      if (!locked.length) throw new NotFoundException('Campaign not found');
+      const plays = await tx.campaignPlay.count({ where: { campaignId: id } });
+      if (plays) {
+        await tx.campaign.update({ where: { id }, data: { isActive: false } });
+        return { ok: true, deactivated: true };
+      }
+      await tx.campaign.delete({ where: { id } });
+      return { ok: true };
+    });
   }
 
   /** An inactive copy that starts a week after the original (or a week from now), same length. */

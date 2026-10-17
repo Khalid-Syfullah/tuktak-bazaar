@@ -132,9 +132,9 @@ function inStock(r: { stock: number | null; givenCount: number }) {
   return r.stock == null || r.givenCount < r.stock;
 }
 
-/** A voucher reward can be won while its voucher is switched on, not expired and not fully used (checkout's rules). */
-function winnable(v: Pick<Voucher, 'isActive' | 'endsAt' | 'usageLimit' | 'usedCount'> | null | undefined, now: Date): boolean {
-  return !!v && v.isActive && v.endsAt > now && (v.usageLimit == null || v.usedCount < v.usageLimit);
+/** A voucher reward can be won while checkout would accept its voucher: switched on, started, not expired, not fully used. */
+function winnable(v: Pick<Voucher, 'isActive' | 'startsAt' | 'endsAt' | 'usageLimit' | 'usedCount'> | null | undefined, now: Date): boolean {
+  return !!v && v.isActive && v.startsAt <= now && v.endsAt > now && (v.usageLimit == null || v.usedCount < v.usageLimit);
 }
 
 /** The same rule as POST /vouchers/:id/collect, so the banner never offers a button that would fail. */
@@ -150,8 +150,11 @@ export class CampaignsService {
     private readonly engagement: EngagementService,
   ) {}
 
-  /** The campaign to show now: active, in its teaser or live window, highest priority, then earliest start. */
-  async current(now = new Date()): Promise<CampaignView | null> {
+  /**
+   * The campaign to show now: active, in its teaser or live window, highest priority, then earliest start.
+   * `refreshAt` is when this answer next changes; with no campaign to show, that's the next teaser starting.
+   */
+  async current(now = new Date()): Promise<{ campaign: CampaignView | null; refreshAt: Date | null }> {
     const candidates = await this.prisma.campaign.findMany({
       where: { isActive: true, endsAt: { gt: now }, startsAt: { lte: new Date(now.getTime() + 168 * HOUR) } },
       orderBy: [{ priority: 'desc' }, { startsAt: 'asc' }],
@@ -159,10 +162,14 @@ export class CampaignsService {
     });
     const teaserStart = (c: (typeof candidates)[number]) => new Date(c.startsAt.getTime() - c.teaserHours * HOUR);
     const index = candidates.findIndex((c) => teaserStart(c) <= now);
-    if (index < 0) return null;
+    if (index < 0) {
+      const next = candidates.map(teaserStart).sort((a, b) => a.getTime() - b.getTime())[0];
+      return { campaign: null, refreshAt: next ?? null };
+    }
     // A higher-priority campaign whose teaser hasn't started yet takes over when it does.
     const takeovers = candidates.slice(0, index).map(teaserStart);
-    return this.view(toInput(candidates[index]), now, takeovers);
+    const campaign = await this.view(toInput(candidates[index]), now, takeovers);
+    return { campaign, refreshAt: campaign.refreshAt };
   }
 
   async view(c: CampaignInput, now = new Date(), changesAt: Date[] = []): Promise<CampaignView> {
@@ -186,7 +193,7 @@ export class CampaignsService {
       c.startsAt,
       voucher?.startsAt,
       voucher?.endsAt,
-      ...rewardVouchers.map((v) => v.endsAt),
+      ...rewardVouchers.flatMap((v) => [v.startsAt, v.endsAt]),
       ...changes,
       ...changesAt,
     ].reduce<Date>((soonest, d) => (d && d > now && d < soonest ? d : soonest), c.endsAt);
@@ -271,7 +278,7 @@ export class CampaignsService {
         include: variantInclude,
       });
       const [flash, sales] = await Promise.all([
-        this.pricing.activeFlash(variants.map((v) => v.id)),
+        this.pricing.activeFlash(variants.map((v) => v.id), this.prisma, now),
         // Any flash sale on these items changes their price when it starts or ends.
         this.prisma.flashSaleItem.findMany({
           where: { variantId: { in: variants.map((v) => v.id) }, flashSale: { isActive: true, endsAt: { gt: now } } },
@@ -362,8 +369,15 @@ export class CampaignsService {
           const r = pool.find((x) => (roll -= x.weight) < 0) ?? pool[pool.length - 1];
           // Conditional increment: under concurrency only as many plays as the stock allows can win it, and
           // only while its prize is still the one read above (an admin edit in between makes it re-pick).
+          // The stock is compared as stored at the moment of writing, not as read above, so a lowered stock holds.
           const claimed = await tx.campaignReward.updateMany({
-            where: { id: r.id, kind: r.kind, voucherId: r.voucherId, coins: r.coins, ...(r.stock != null ? { givenCount: { lt: r.stock } } : {}) },
+            where: {
+              id: r.id,
+              kind: r.kind,
+              voucherId: r.voucherId,
+              coins: r.coins,
+              OR: [{ stock: null }, { givenCount: { lt: this.prisma.campaignReward.fields.stock } }],
+            },
             data: { givenCount: { increment: 1 } },
           });
           if (claimed.count === 1) chosen = r;
@@ -394,6 +408,8 @@ export class CampaignsService {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new ConflictException('আজ আপনি খেলেছেন — কাল আবার আসুন');
       }
+      // The campaign was deleted while this play was starting.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') throw new NotFoundException('এই অফারটি আর নেই');
       throw err;
     }
   }

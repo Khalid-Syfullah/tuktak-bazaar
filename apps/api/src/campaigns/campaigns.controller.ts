@@ -7,12 +7,15 @@ import { CampaignsService } from './campaigns.service';
 export class CampaignsController {
   constructor(private readonly campaigns: CampaignsService) {}
 
-  /** The campaign to show right now, or null. `serverNow` lets the browser correct its clock for the countdown. */
+  /**
+   * The campaign to show right now, or null. `serverNow` lets the browser correct its clock for the countdown;
+   * `refreshAt` is when the answer next changes, so an open page knows when to ask again.
+   */
   @Public()
   @Get('current')
   async current() {
     const now = new Date();
-    return { serverNow: now, campaign: await this.campaigns.current(now) };
+    return { serverNow: now, ...(await this.campaigns.current(now)) };
   }
 
   @Get(':id/me')

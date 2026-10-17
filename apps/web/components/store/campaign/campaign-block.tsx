@@ -1,7 +1,7 @@
 'use client';
 
 import clsx from 'clsx';
-import type { CampaignView, CurrentCampaign } from '@/lib/campaign';
+import type { CurrentCampaign } from '@/lib/campaign';
 import { CampaignBanner } from './campaign-banner';
 import { DailyGame } from './daily-game';
 import { DealCards } from './deal-cards';
@@ -15,13 +15,14 @@ import { dhakaDay, phaseAt, useCampaignMe, useFreshCampaign, useServerNow } from
  * for Admin → Campaigns: no requests, the clock starts at `data.serverNow`, and confetti plays every time.
  */
 export function CampaignBlock({ data, preview = false }: { data: CurrentCampaign; preview?: boolean }) {
-  if (!data.campaign) return null;
-  return <Block key={`${data.campaign.id}-${preview ? data.serverNow : ''}`} initial={data.campaign} serverNow={data.serverNow} preview={preview} />;
+  // On the store the block stays mounted even with no campaign, so one appears when its teaser starts.
+  if (preview && !data.campaign) return null;
+  return <Block key={`${data.campaign?.id ?? 'none'}-${preview ? data.serverNow : ''}`} data={data} preview={preview} />;
 }
 
-function Block({ initial, serverNow, preview }: { initial: CampaignView; serverNow: string; preview: boolean }) {
-  const now = useServerNow(serverNow, preview);
-  const { view: c, due } = useFreshCampaign(initial, now, preview);
+function Block({ data, preview }: { data: CurrentCampaign; preview: boolean }) {
+  const now = useServerNow(data.serverNow, preview);
+  const { view: c, due } = useFreshCampaign(data, now, preview);
   const me = useCampaignMe(c?.id ?? '', !preview && !!c, now === null ? null : dhakaDay(now));
   if (!c) return null;
   const phase = now === null ? c.status : phaseAt(now, c.startsAt, c.endsAt);

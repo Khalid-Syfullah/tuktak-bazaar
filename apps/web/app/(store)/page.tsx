@@ -44,7 +44,7 @@ export default async function HomePage() {
       )}
 
       {/* Promo campaign: right before "Shop by category", whenever one is live or in its teaser. */}
-      {promo?.campaign && <CampaignBlock data={promo} />}
+      {promo && <CampaignBlock data={promo} />}
 
       <section aria-labelledby="cat-title">
         <div className="mb-3 flex items-baseline justify-between">

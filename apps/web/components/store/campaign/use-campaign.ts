@@ -99,18 +99,22 @@ function fetchCurrent(): Promise<CurrentCampaign> {
 const ATTEMPTS = 5;
 const RETRY_MS = 2000;
 
+type Fresh = { campaign: CampaignView | null; refreshAt: string | null };
+const answerKey = (a: Fresh) => `${a.campaign?.id ?? 'none'}@${a.refreshAt}`;
+
 /**
  * The campaign to show now, starting from what the page was rendered with. The API says when its answer
- * next changes (`refreshAt`: the start, a flash sale behind the deals starting or ending, the end, …), and
- * at that moment this fetches it again: an open page never keeps stale prices, and when a campaign ends the
- * next eligible one takes its place (or nothing). `due` is true from that moment until fresh data arrives.
- * The device clock is synced to the server's but can be a moment early, so an answer that hasn't changed
- * yet is retried a few times. Nothing is fetched in preview.
+ * next changes (`refreshAt`: a teaser starting, the start, a flash sale behind the deals starting or ending,
+ * the end, …), and at that moment this fetches it again: an open page never keeps stale prices, a campaign
+ * appears when its teaser starts, and when one ends the next eligible one takes its place (or nothing).
+ * `due` is true from that moment until fresh data arrives. The device clock is synced to the server's but
+ * can be a moment early, so an answer that hasn't changed yet is retried a few times. Nothing is fetched
+ * in preview.
  */
-export function useFreshCampaign(initial: CampaignView, now: number | null, preview: boolean) {
-  const [view, setView] = useState<CampaignView | null>(initial);
-  const due = !preview && view !== null && now !== null && now >= Date.parse(view.refreshAt);
-  const dueFor = due ? `${view.id}@${view.refreshAt}` : null;
+export function useFreshCampaign(initial: CurrentCampaign, now: number | null, preview: boolean) {
+  const [answer, setAnswer] = useState<Fresh>({ campaign: initial.campaign, refreshAt: initial.refreshAt ?? initial.campaign?.refreshAt ?? null });
+  const due = !preview && answer.refreshAt !== null && now !== null && now >= Date.parse(answer.refreshAt);
+  const dueFor = due ? answerKey(answer) : null;
   useEffect(() => {
     if (!dueFor) return;
     let cancelled = false;
@@ -122,10 +126,10 @@ export function useFreshCampaign(initial: CampaignView, now: number | null, prev
       fetchCurrent()
         .then((d) => {
           if (cancelled) return;
-          const next = d.campaign;
+          const next: Fresh = { campaign: d.campaign, refreshAt: d.refreshAt ?? d.campaign?.refreshAt ?? null };
           // The same answer means the server hasn't reached the moment yet.
-          if (next && `${next.id}@${next.refreshAt}` === dueFor) retry(n);
-          else setView(next);
+          if (answerKey(next) === dueFor) retry(n);
+          else setAnswer(next);
         })
         .catch(() => retry(n));
     };
@@ -135,7 +139,7 @@ export function useFreshCampaign(initial: CampaignView, now: number | null, prev
       clearTimeout(timer);
     };
   }, [dueFor]);
-  return { view, due };
+  return { view: answer.campaign, due };
 }
 
 /** TEASER before the start, LIVE until the end, ENDED after. */

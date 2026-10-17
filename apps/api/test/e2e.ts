@@ -579,11 +579,30 @@ async function main() {
       data: { slug: 'e2e-later', title: 'পরের অফার', startsAt: new Date(soon.getTime() + 3600_000), endsAt: new Date(soon.getTime() + 5 * 3600_000), teaserHours: 1, priority: 60 },
     });
     const beforeTakeover = (await new Client().get('/campaigns/current')).data.campaign;
+    await prisma.campaign.update({ where: { id: live.id }, data: { isActive: false } });
+    const nothingYet = (await new Client().get('/campaigns/current')).data;
+    await prisma.campaign.update({ where: { id: live.id }, data: { isActive: true } });
     await prisma.campaign.update({ where: { id: later.id }, data: { isActive: false } });
     check(
       "a higher-priority campaign's teaser start counts as a change",
       beforeTakeover?.id === live.id && Date.parse(beforeTakeover.refreshAt) === soon.getTime(),
       [beforeTakeover?.refreshAt, soon.toISOString()],
+    );
+    check(
+      'with nothing to show yet, the answer says when the next teaser starts',
+      nothingYet.campaign === null && Date.parse(nothingYet.refreshAt) === soon.getTime(),
+      nothingYet,
+    );
+    const pickedVariant = await prisma.productVariant.findFirstOrThrow({ where: { isActive: true, stock: { gt: 0 }, product: { status: 'ACTIVE' }, flashItems: { none: {} } } });
+    const futureSale = await prisma.flashSale.create({
+      data: { title: 'e2e future sale', startsAt: new Date(Date.now() + 3 * 3600_000), endsAt: new Date(Date.now() + 5 * 3600_000), items: { create: { variantId: pickedVariant.id, flashPrice: Math.round(pickedVariant.price / 2), quantityLimit: 10 } } },
+    });
+    const atSale = await nusrat.post('/admin/campaigns/preview', { ...form({ isActive: false, productIds: [pickedVariant.id] }), at: iso(4) });
+    await prisma.flashSale.update({ where: { id: futureSale.id }, data: { isActive: false } });
+    check(
+      'the preview prices hand-picked deals at the chosen moment',
+      atSale.data.campaign?.deals?.[0]?.price === Math.round(pickedVariant.price / 2),
+      atSale.data.campaign?.deals,
     );
     const dup = await nusrat.post(`/admin/campaigns/${created.data.id}/duplicate`);
     check('duplicating makes an inactive copy', dup.status === 201 && dup.data.isActive === false && dup.data.slug.endsWith('-copy'), dup.data);
@@ -702,17 +721,21 @@ async function main() {
     const validity = { startsAt: new Date(Date.now() - 3600_000), endsAt: new Date(Date.now() + 48 * 3600_000) };
     const fullyUsed = await prisma.voucher.create({ data: { code: `E2EFULL${stamp}`, title: 'শেষ হওয়া ভাউচার', type: 'FIXED', value: 30, usageLimit: 1, usedCount: 1, ...validity } });
     const usedUp = await prisma.voucher.create({ data: { code: `E2EUSED${stamp}`, title: 'ব্যবহৃত ভাউচার', type: 'FIXED', value: 30, perUserLimit: 1, ...validity } });
+    const notYet = await prisma.voucher.create({
+      data: { code: `E2ESOON${stamp}`, title: 'আসছে ভাউচার', type: 'FIXED', value: 30, startsAt: new Date(Date.now() + 3600_000), endsAt: new Date(Date.now() + 48 * 3600_000) },
+    });
     const herOrder = await prisma.order.findFirstOrThrow({ where: { userId: login.data.user.id, redemption: null } });
     await prisma.voucherRedemption.create({ data: { voucherId: usedUp.id, userId: login.data.user.id, orderId: herOrder.id, discount: 30 } });
     const limitGame = await gameCampaign('e2e-limits', [
       { kind: 'VOUCHER', voucher: { connect: { id: fullyUsed.id } }, label: '৳৩০ ছাড়', weight: 1000 },
       { kind: 'VOUCHER', voucher: { connect: { id: usedUp.id } }, label: '৳৩০ ছাড়', weight: 1000 },
+      { kind: 'VOUCHER', voucher: { connect: { id: notYet.id } }, label: '৳৩০ ছাড়', weight: 1000 },
       { kind: 'NONE', label: 'আবার চেষ্টা করুন', weight: 1 },
     ]);
     const limitPlay = await ayesha.post(`/campaigns/${limitGame.id}/play`);
     const limitGiven = await prisma.campaignReward.aggregate({ where: { campaignId: limitGame.id, kind: 'VOUCHER' }, _sum: { givenCount: true } });
     check(
-      "vouchers checkout would refuse (fully used, or the shopper's own limit used up) are not won",
+      "vouchers checkout would refuse (fully used, not started yet, or the shopper's own limit used up) are not won",
       limitPlay.data.reward?.kind === 'NONE' && limitGiven._sum.givenCount === 0,
       limitPlay.data,
     );

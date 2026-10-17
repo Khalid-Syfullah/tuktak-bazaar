@@ -52,6 +52,8 @@ export interface CampaignView {
 export interface CurrentCampaign {
   serverNow: string;
   campaign: CampaignView | null;
+  /** When the answer next changes; with no campaign showing, when the next teaser starts. Absent in previews. */
+  refreshAt?: string | null;
 }
 
 export interface RewardResult {
