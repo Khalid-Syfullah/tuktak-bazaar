@@ -15,7 +15,7 @@ interface HomeData {
   flashSale: FlashSaleData | null;
   categories: CategoryNode[];
   featured: ProductCardData[];
-  justForYou: { items: ProductCardData[]; pages: number };
+  justForYou: { items: ProductCardData[]; pages: number; seed?: string };
 }
 
 export default async function HomePage() {
@@ -93,7 +93,11 @@ export default async function HomePage() {
           </h2>
           <div className="stitch-line flex-1" />
         </div>
-        <LoadMoreGrid initial={data.justForYou.items} pages={data.justForYou.pages} />
+        <LoadMoreGrid
+          initial={data.justForYou.items}
+          pages={data.justForYou.pages}
+          query={data.justForYou.seed ? `sort=for_you&seed=${data.justForYou.seed}` : undefined}
+        />
       </section>
     </div>
   );

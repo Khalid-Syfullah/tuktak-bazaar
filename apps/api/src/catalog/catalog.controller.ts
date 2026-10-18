@@ -20,6 +20,7 @@ export function listParams(query: Record<string, string | undefined>) {
     maxPrice: num(query.maxPrice),
     minRating: num(query.rating),
     sort: SORTS.includes(query.sort as SortKey) ? (query.sort as SortKey) : 'relevance',
+    seed: query.seed && /^\d{4}-\d{2}-\d{2}$/.test(query.seed) ? query.seed : undefined,
     page: clamp(toInt(query.page, 1), 1, 500),
     limit: clamp(toInt(query.limit, 24), 1, 60),
   };
