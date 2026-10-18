@@ -260,6 +260,43 @@ async function main() {
   check('staff changes are audited', staffAudit.data.items.some((a: any) => a.action === 'staff.add') && staffAudit.data.items.some((a: any) => a.action === 'staff.remove'));
   check('passwords never reach the audit log', !JSON.stringify(staffAudit.data.items).includes('packer1234'));
 
+  // ───── Invoices: who can open them, and share links ─────
+  console.log('\nInvoices and share links');
+  const invNo = online.data.orderNo;
+  const invOwn = await ayesha.get(`/orders/${invNo}`);
+  const shareKey = invOwn.data.invoiceUrl ? new URL(invOwn.data.invoiceUrl).searchParams.get('key') ?? '' : '';
+  check('the order page carries the invoice share link', shareKey.length === 22 && invOwn.data.invoiceUrl.includes(`/invoice/${invNo}?key=`), invOwn.data.invoiceUrl);
+  const invMine = await ayesha.get(`/orders/${invNo}/invoice`);
+  check('the customer opens their own invoice', invMine.status === 200 && invMine.data.viewer === 'owner' && invMine.data.shipPhone === invOwn.data.shipPhone && invMine.data.items.length > 0, invMine.status);
+  check(
+    'the invoice carries no order history, payments, shipments or share link',
+    ['events', 'payments', 'shipments', 'invoiceUrl', 'userId', 'note'].every((k) => !(k in invMine.data)),
+    Object.keys(invMine.data),
+  );
+  const invStranger = await otp.get(`/orders/${invNo}/invoice`);
+  const invMissing = await otp.get('/orders/TB0000000000000/invoice');
+  check(
+    "another customer's invoice looks exactly like a missing one",
+    invStranger.status === 404 && invMissing.status === 404 && JSON.stringify(invStranger.data) === JSON.stringify(invMissing.data),
+    { stranger: invStranger.data, missing: invMissing.data },
+  );
+  check('signed-out visitors without a link are asked to log in', (await anon.get(`/orders/${invNo}/invoice`)).status === 401);
+  check('owners open any invoice', (await admin.get(`/orders/${invNo}/invoice`)).data.viewer === 'staff');
+  check('staff with order access open any invoice', (await rafi.get(`/orders/${invNo}/invoice`)).data.viewer === 'staff');
+  check('staff without order access cannot', (await nusrat.get(`/orders/${invNo}/invoice`)).status === 404);
+  const invShared = await new Client().get(`/orders/${invNo}/invoice?key=${shareKey}`);
+  check(
+    'the share link opens the invoice signed out, with the phone masked',
+    invShared.status === 200 && invShared.data.viewer === 'link' && invShared.data.shipPhone.includes('•') && invShared.data.shipPhone !== invOwn.data.shipPhone && invShared.data.total === invOwn.data.total,
+    invShared.data,
+  );
+  check('the share link also works for someone signed in to another account', (await otp.get(`/orders/${invNo}/invoice?key=${shareKey}`)).data.viewer === 'link');
+  check('a share key only opens its own order', (await new Client().get(`/orders/${codOrderNo}/invoice?key=${shareKey}`)).status === 404);
+  const invFlipped = shareKey.slice(0, -1) + (shareKey.endsWith('A') ? 'B' : 'A');
+  const invBadKeys = await Promise.all([invFlipped, shareKey.slice(0, 12), `${shareKey}x`].map((k) => new Client().get(`/orders/${invNo}/invoice?key=${encodeURIComponent(k)}`)));
+  check('a changed, shortened or padded key is refused', invBadKeys.every((r) => r.status === 404), invBadKeys.map((r) => r.status));
+  check('the admin order page has the same share link', (await admin.get(`/admin/orders/${invNo}`)).data.invoiceUrl === invOwn.data.invoiceUrl);
+
   // ───── Courier booking and status sync ─────
   console.log('\nCourier booking');
   const couriers = await rafi.get('/admin/couriers');

@@ -1,7 +1,8 @@
 'use client';
 
-import { Banknote, Check, Hand, PackageCheck, PhoneCall, Printer, Truck, X } from 'lucide-react';
+import { Banknote, Check, FileText, Hand, PackageCheck, PhoneCall, Printer, Truck, X } from 'lucide-react';
 import { FormEvent, useState } from 'react';
+import { InvoiceLinkButton } from '@/components/store/invoice-bits';
 import { Button, Field, Input, Modal, Select, Textarea } from '@/components/ui';
 import { post } from '@/lib/api';
 import { tk } from '@/lib/format';
@@ -26,6 +27,8 @@ export interface OrderActionProps {
   booking: BookingOrder;
   /** GET /admin/couriers; null when it could not be loaded. */
   courierOptions: CourierOption[] | null;
+  /** The invoice's share link. */
+  invoiceUrl: string;
 }
 
 const CANCEL_REASONS = [
@@ -111,6 +114,15 @@ export function OrderActions(o: OrderActionProps) {
         <Button variant="outline" onClick={() => window.print()}>
           <Printer className="size-4" /> Print packing slip
         </Button>
+        <a
+          href={o.invoiceUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-line bg-white px-4 text-[15px] font-semibold text-ink transition-colors hover:border-ink-faint"
+        >
+          <FileText className="size-4" /> Invoice
+        </a>
+        <InvoiceLinkButton url={o.invoiceUrl} orderNo={o.orderNo} mode="copy" />
         {can('CANCELLED') && (
           <Button variant="ghost" className="text-sindoor hover:bg-sindoor-tint hover:text-sindoor" onClick={() => setDialog('cancel')}>
             <X className="size-4" /> Cancel order

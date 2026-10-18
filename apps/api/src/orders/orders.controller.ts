@@ -1,11 +1,12 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, NotFoundException, Param, Post, Query } from '@nestjs/common';
-import { OrderStatus, Prisma } from '@prisma/client';
+import { BadRequestException, Body, Controller, Get, HttpCode, NotFoundException, Param, Post, Query, UnauthorizedException } from '@nestjs/common';
+import { OrderStatus, Permission, Prisma } from '@prisma/client';
 import { IsOptional, IsString, MaxLength } from 'class-validator';
-import { AuthUser, CurrentUser } from '../common/auth';
+import { AuthUser, CurrentUser, effectivePermissions, Public } from '../common/auth';
 import { ZONE_LABELS } from '../common/locations';
 import { SettingsService } from '../common/settings.service';
 import { clamp, toInt } from '../common/utils';
 import { PrismaService } from '../prisma/prisma.service';
+import { invoiceUrl, maskPhone, verifyInvoiceKey } from './invoice-link';
 import { CUSTOMER_CANCELLABLE, OrderWorkflowService } from './order-workflow.service';
 
 class CancelDto {
@@ -75,6 +76,58 @@ export class OrdersController {
     };
   }
 
+  /**
+   * The printable invoice. Opens for the customer who placed the order, for owners and staff with
+   * order access, and for anyone holding the order's share link (?key=), who sees the phone masked.
+   * Everyone else gets the same 404 as for an order that doesn't exist, so order numbers can't be probed.
+   */
+  @Public()
+  @Get(':orderNo/invoice')
+  async invoice(@CurrentUser() user: AuthUser | undefined, @Param('orderNo') orderNo: string, @Query('key') key?: unknown) {
+    const viaKey = key !== undefined && verifyInvoiceKey(orderNo, key);
+    if (!user && key === undefined) throw new UnauthorizedException('Please log in to see this invoice');
+    const order = await this.prisma.order.findUnique({ where: { orderNo }, include: { items: true } });
+    const viewer = !order
+      ? null
+      : user && order.userId === user.id
+        ? 'owner'
+        : user && effectivePermissions(user).includes(Permission.ORDERS)
+          ? 'staff'
+          : viaKey
+            ? 'link'
+            : null;
+    if (!order || !viewer) throw new NotFoundException('Invoice not found');
+    return {
+      viewer,
+      orderNo: order.orderNo,
+      placedAt: order.placedAt,
+      status: order.status,
+      paymentMethod: order.paymentMethod,
+      paymentStatus: order.paymentStatus,
+      subtotal: order.subtotal,
+      shippingFee: order.shippingFee,
+      shippingDiscount: order.shippingDiscount,
+      discount: order.discount,
+      coinsUsed: order.coinsUsed,
+      total: order.total,
+      voucherCode: order.voucherCode,
+      shipName: order.shipName,
+      shipPhone: viewer === 'link' ? maskPhone(order.shipPhone) : order.shipPhone,
+      shipLine: order.shipLine,
+      shipArea: order.shipArea,
+      shipDistrict: order.shipDistrict,
+      shipDivision: order.shipDivision,
+      items: order.items.map((i) => ({
+        id: i.id,
+        title: i.title,
+        variantLabel: i.variantLabel,
+        unitPrice: i.unitPrice,
+        quantity: i.quantity,
+        lineTotal: i.lineTotal,
+      })),
+    };
+  }
+
   @Get(':orderNo')
   async detail(@CurrentUser() user: AuthUser, @Param('orderNo') orderNo: string) {
     const order = await this.prisma.order.findFirst({
@@ -110,6 +163,7 @@ export class OrdersController {
         events: sh.events.map(({ source, ...e }) => ({ ...e, message: source === 'webhook' || source === 'sync' ? e.message : null })),
       })),
       zoneLabel: ZONE_LABELS[order.zone],
+      invoiceUrl: invoiceUrl(order.orderNo),
       canCancel: CUSTOMER_CANCELLABLE.includes(order.status),
       canPay: order.status === 'AWAITING_PAYMENT' && (!order.expiresAt || order.expiresAt.getTime() > now),
       items: order.items.map((item) => {

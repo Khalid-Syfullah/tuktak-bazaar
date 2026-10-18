@@ -82,6 +82,7 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
                 courier={o.courier}
                 trackingNo={o.trackingNo}
                 courierOptions={couriers}
+                invoiceUrl={o.invoiceUrl}
                 booking={{
                   id: o.id,
                   orderNo: o.orderNo,
