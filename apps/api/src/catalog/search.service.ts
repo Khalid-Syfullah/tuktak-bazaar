@@ -12,6 +12,8 @@ export interface SearchParams {
   maxPrice?: number;
   minRating?: number;
   sort?: SortKey;
+  /** Shuffle key for the `for_you` sort (a Dhaka date, YYYY-MM-DD); defaults to today. */
+  seed?: string;
   page: number;
   limit: number;
 }
@@ -122,7 +124,7 @@ export class SearchService {
       WHERE ${Prisma.join(outer, ' AND ')}`;
   }
 
-  private orderBy(sort: SortKey | undefined, hasQuery: boolean) {
+  private orderBy(sort: SortKey | undefined, hasQuery: boolean, seed?: string) {
     switch (sort) {
       case 'popular':
         return Prisma.sql`"soldCount" DESC, "ratingAvg" DESC`;
@@ -136,8 +138,11 @@ export class SearchService {
         return Prisma.sql`"ratingAvg" DESC, "ratingCount" DESC`;
       case 'for_you':
         // The home page's "Just for you": products with photos first, in an order that changes
-        // every day (Dhaka date) but stays fixed within the day, so "Load more" pages never repeat.
-        return Prisma.sql`"hasImage" DESC, md5(id || to_char(now() AT TIME ZONE 'Asia/Dhaka', 'YYYY-MM-DD'))`;
+        // every day. The home page passes the day it was rendered as `seed`, so "Load more" keeps
+        // the same order for that visit even after midnight.
+        return seed
+          ? Prisma.sql`"hasImage" DESC, md5(id || ${seed})`
+          : Prisma.sql`"hasImage" DESC, md5(id || to_char(now() AT TIME ZONE 'Asia/Dhaka', 'YYYY-MM-DD'))`;
       default:
         return hasQuery ? Prisma.sql`score DESC, "soldCount" DESC` : Prisma.sql`"soldCount" DESC, "ratingAvg" DESC`;
     }
@@ -148,7 +153,7 @@ export class SearchService {
     const offset = (params.page - 1) * params.limit;
     const rows = await this.prisma.$queryRaw<Row[]>(Prisma.sql`
       SELECT id, (count(*) OVER())::int AS total FROM (${base}) s
-      ORDER BY ${this.orderBy(params.sort, !!params.q?.trim())}, id
+      ORDER BY ${this.orderBy(params.sort, !!params.q?.trim(), params.seed)}, id
       LIMIT ${params.limit} OFFSET ${offset}`);
     if (rows.length) return { ids: rows.map((r) => r.id), total: rows[0].total };
     if (offset === 0) return { ids: [], total: 0 };

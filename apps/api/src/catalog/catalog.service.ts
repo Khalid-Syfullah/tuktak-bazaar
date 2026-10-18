@@ -3,7 +3,7 @@ import { BannerPlacement, Category, DeliveryZone, Prisma } from '@prisma/client'
 import { ZONE_LABELS } from '../common/locations';
 import { CARD_INCLUDE, PricingService, ProductCard } from '../common/pricing.service';
 import { SettingsService } from '../common/settings.service';
-import { variantLabel } from '../common/utils';
+import { dhakaDay, variantLabel } from '../common/utils';
 import { PrismaService } from '../prisma/prisma.service';
 import { SearchParams, SearchService } from './search.service';
 
@@ -166,10 +166,11 @@ export class CatalogService {
       },
       orderBy: { sortOrder: 'asc' },
     });
+    const seed = dhakaDay();
     const [flashSale, categories, justForYou, featured] = await Promise.all([
       this.currentFlashSale(12),
       this.tree(),
-      this.list({ page: 1, limit: 24, sort: 'for_you' }),
+      this.list({ page: 1, limit: 24, sort: 'for_you', seed }),
       this.prisma.product.findMany({ where: { status: 'ACTIVE', isFeatured: true }, include: CARD_INCLUDE, take: 12 }),
     ]);
     return {
@@ -178,7 +179,7 @@ export class CatalogService {
       flashSale,
       categories,
       featured: await this.pricing.cards(featured),
-      justForYou: { items: justForYou.items, pages: justForYou.pages },
+      justForYou: { items: justForYou.items, pages: justForYou.pages, seed },
     };
   }
 
