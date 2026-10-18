@@ -8,7 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CatalogService } from './catalog.service';
 import { SortKey } from './search.service';
 
-const SORTS: SortKey[] = ['relevance', 'popular', 'newest', 'price_asc', 'price_desc', 'rating'];
+const SORTS: SortKey[] = ['relevance', 'popular', 'newest', 'price_asc', 'price_desc', 'rating', 'for_you'];
 
 export function listParams(query: Record<string, string | undefined>) {
   const num = (v?: string) => (v != null && v !== '' && Number.isFinite(Number(v)) ? Number(v) : undefined);

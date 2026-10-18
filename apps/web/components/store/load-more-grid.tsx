@@ -7,7 +7,7 @@ import { Button } from '../ui';
 import { ProductGrid } from './product-card';
 
 /** "Just for you": first page rendered on the server, more pages on request. */
-export function LoadMoreGrid({ initial, pages, query = 'sort=popular' }: { initial: ProductCardData[]; pages: number; query?: string }) {
+export function LoadMoreGrid({ initial, pages, query = 'sort=for_you' }: { initial: ProductCardData[]; pages: number; query?: string }) {
   const [items, setItems] = useState(initial);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);

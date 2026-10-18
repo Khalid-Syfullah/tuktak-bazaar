@@ -169,7 +169,7 @@ export class CatalogService {
     const [flashSale, categories, justForYou, featured] = await Promise.all([
       this.currentFlashSale(12),
       this.tree(),
-      this.list({ page: 1, limit: 24, sort: 'popular' }),
+      this.list({ page: 1, limit: 24, sort: 'for_you' }),
       this.prisma.product.findMany({ where: { status: 'ACTIVE', isFeatured: true }, include: CARD_INCLUDE, take: 12 }),
     ]);
     return {
