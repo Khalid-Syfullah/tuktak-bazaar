@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
-export type SortKey = 'relevance' | 'popular' | 'newest' | 'price_asc' | 'price_desc' | 'rating';
+export type SortKey = 'relevance' | 'popular' | 'newest' | 'price_asc' | 'price_desc' | 'rating' | 'for_you';
 
 export interface SearchParams {
   q?: string;
@@ -98,6 +98,7 @@ export class SearchService {
     return Prisma.sql`
       SELECT * FROM (
         SELECT p.id, p."soldCount", p."ratingAvg", p."ratingCount", p."createdAt",
+               EXISTS (SELECT 1 FROM "ProductImage" pi WHERE pi."productId" = p.id) AS "hasImage",
                b.slug AS "brandSlug", b.name AS "brandName",
                pr.price AS price, ${termScore} AS tscore, ${trigram} AS trgm,
                ${termScore} + 2 * ${trigram} AS score
@@ -133,6 +134,10 @@ export class SearchService {
         return Prisma.sql`price DESC`;
       case 'rating':
         return Prisma.sql`"ratingAvg" DESC, "ratingCount" DESC`;
+      case 'for_you':
+        // The home page's "Just for you": products with photos first, in an order that changes
+        // every day (Dhaka date) but stays fixed within the day, so "Load more" pages never repeat.
+        return Prisma.sql`"hasImage" DESC, md5(id || to_char(now() AT TIME ZONE 'Asia/Dhaka', 'YYYY-MM-DD'))`;
       default:
         return hasQuery ? Prisma.sql`score DESC, "soldCount" DESC` : Prisma.sql`"soldCount" DESC, "ratingAvg" DESC`;
     }
