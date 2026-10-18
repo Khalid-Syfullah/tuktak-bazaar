@@ -8,12 +8,16 @@ const API_URL = process.env.API_URL || 'http://localhost:4000';
  * Server-side fetch to the API, forwarding the visitor's auth cookie.
  * Returns null on 404 so pages can call notFound().
  */
-export async function serverApi<T = any>(path: string, opts: { revalidate?: number } = {}): Promise<T | null> {
+async function cookieHeader(): Promise<string> {
   const jar = await cookies();
-  const cookie = jar
+  return jar
     .getAll()
     .map((c) => `${c.name}=${c.value}`)
     .join('; ');
+}
+
+export async function serverApi<T = any>(path: string, opts: { revalidate?: number } = {}): Promise<T | null> {
+  const cookie = await cookieHeader();
   const res = await fetch(`${API_URL}/api${path}`, {
     headers: cookie ? { cookie } : {},
     cache: opts.revalidate ? 'force-cache' : 'no-store',
@@ -25,6 +29,15 @@ export async function serverApi<T = any>(path: string, opts: { revalidate?: numb
   if (res.status === 403 && path.startsWith('/admin')) redirect('/admin/no-access');
   if (!res.ok) throw new Error(`API ${path} failed with ${res.status}`);
   return (await res.json()) as T;
+}
+
+/** Like serverApi, but hands back the status so a page can tell "log in first" (401) from "not found" (404). */
+export async function serverGet<T = any>(path: string): Promise<{ status: number; data: T | null }> {
+  const cookie = await cookieHeader();
+  const res = await fetch(`${API_URL}/api${path}`, { headers: cookie ? { cookie } : {}, cache: 'no-store' });
+  if (res.status === 401 || res.status === 404) return { status: res.status, data: null };
+  if (!res.ok) throw new Error(`API ${path} failed with ${res.status}`);
+  return { status: res.status, data: (await res.json()) as T };
 }
 
 export async function mustGet<T = any>(path: string): Promise<T> {

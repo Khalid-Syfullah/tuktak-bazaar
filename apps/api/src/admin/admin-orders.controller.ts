@@ -7,6 +7,7 @@ import { EngagementService } from '../common/engagement.service';
 import { ZONE_LABELS } from '../common/locations';
 import { clamp, toBool, toInt } from '../common/utils';
 import { OrderWorkflowService, STATUS_TITLES, TRANSITIONS } from '../orders/order-workflow.service';
+import { invoiceUrl } from '../orders/invoice-link';
 import { PrismaService } from '../prisma/prisma.service';
 
 class TransitionDto {
@@ -120,6 +121,7 @@ export class AdminOrdersController {
     return {
       ...order,
       zoneLabel: ZONE_LABELS[order.zone],
+      invoiceUrl: invoiceUrl(order.orderNo),
       nextStatuses: TRANSITIONS[order.status],
       couriers: COURIERS,
       customerHistory: Object.fromEntries(history.map((h) => [h.status, h._count._all])),

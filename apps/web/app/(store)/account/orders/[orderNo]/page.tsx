@@ -3,6 +3,7 @@ import { Check, CircleCheck, FileText, LifeBuoy, TriangleAlert, Truck } from 'lu
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Countdown } from '@/components/store/countdown';
+import { InvoiceLinkButton } from '@/components/store/invoice-bits';
 import { CancelOrderButton, PayNowButton, ReturnButton } from '@/components/store/order-actions';
 import { StatusBadge } from '@/components/store/order-bits';
 import { Badge } from '@/components/ui';
@@ -42,6 +43,8 @@ interface OrderDetail {
   cancelReason: string | null;
   canCancel: boolean;
   canPay: boolean;
+  /** The invoice with its share key, so it opens for anyone the customer sends it to. */
+  invoiceUrl: string;
   items: {
     id: string;
     productSlug: string;
@@ -155,9 +158,10 @@ export default async function OrderPage({ params, searchParams }: Props) {
             <StatusBadge status={o.status} />
             {o.canPay && <PayNowButton orderNo={o.orderNo} />}
             {o.canCancel && <CancelOrderButton orderNo={o.orderNo} />}
-            <Link href={`/invoice/${o.orderNo}`} target="_blank" className="inline-flex h-10 items-center gap-1.5 rounded-md border border-line px-3 text-[15px] font-semibold hover:border-ink-faint">
+            <Link href={o.invoiceUrl ?? `/invoice/${o.orderNo}`} target="_blank" className="inline-flex h-10 items-center gap-1.5 rounded-md border border-line px-3 text-[15px] font-semibold hover:border-ink-faint">
               <FileText className="size-4" /> Invoice
             </Link>
+            {o.invoiceUrl && <InvoiceLinkButton url={o.invoiceUrl} orderNo={o.orderNo} className="px-3" />}
             <Link
               href={`/account/support/new?order=${encodeURIComponent(o.orderNo)}`}
               className="inline-flex h-10 items-center gap-1.5 rounded-md border border-line px-3 text-[15px] font-semibold hover:border-ink-faint"

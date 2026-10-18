@@ -1,17 +1,23 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { PrintButton } from '@/components/store/print-button';
+import { SwitchAccountButton } from '@/components/store/invoice-bits';
 import { dateTime, PAYMENT_LABEL, PAYMENT_STATUS_LABEL, tk } from '@/lib/format';
-import { mustGet, requireUser, serverApi } from '@/lib/server';
+import { getMe, serverApi, serverGet } from '@/lib/server';
 import { BRAND_BN } from '@/components/store/logo';
 
-type Props = { params: Promise<{ orderNo: string }> };
+type Props = { params: Promise<{ orderNo: string }>; searchParams: Promise<{ key?: string | string[] }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { orderNo } = await params;
-  return { title: `Invoice ${orderNo}`, robots: { index: false } };
+  // Share links carry a key in the URL: keep it out of the Referer sent to other sites.
+  return { title: `Invoice ${orderNo}`, robots: { index: false }, referrer: 'no-referrer' };
 }
 
 interface Invoice {
+  /** How this visitor may see it: the customer, store staff, or someone holding the share link. */
+  viewer: 'owner' | 'staff' | 'link';
   orderNo: string;
   placedAt: string;
   status: string;
@@ -33,13 +39,17 @@ interface Invoice {
   items: { id: string; title: string; variantLabel: string | null; unitPrice: number; quantity: number; lineTotal: number }[];
 }
 
-export default async function InvoicePage({ params }: Props) {
-  const { orderNo } = await params;
-  await requireUser(`/invoice/${orderNo}`);
-  const [o, store] = await Promise.all([
-    mustGet<Invoice>(`/orders/${orderNo}`),
+export default async function InvoicePage({ params, searchParams }: Props) {
+  const [{ orderNo }, { key: rawKey }] = await Promise.all([params, searchParams]);
+  const key = typeof rawKey === 'string' ? rawKey : undefined;
+  const self = `/invoice/${encodeURIComponent(orderNo)}${key ? `?key=${encodeURIComponent(key)}` : ''}`;
+  const [res, store] = await Promise.all([
+    serverGet<Invoice>(`/orders/${encodeURIComponent(orderNo)}/invoice${key ? `?key=${encodeURIComponent(key)}` : ''}`),
     serverApi<{ store: { name: string; supportPhone: string; supportEmail: string } }>('/store'),
   ]);
+  if (res.status === 401) redirect(`/login?next=${encodeURIComponent(self)}`);
+  if (!res.data) return <InvoiceUnavailable self={self} hasKey={!!key} />;
+  const o = res.data;
   return (
     <div className="mx-auto max-w-3xl bg-white p-8 text-ink print:p-0">
       <div className="flex items-start justify-between border-b-2 border-padma pb-4">
@@ -121,6 +131,43 @@ function Line({ label, value }: { label: string; value: string }) {
     <div className="flex justify-between">
       <dt className="text-ink-soft">{label}</dt>
       <dd className="tabular-nums">{value}</dd>
+    </div>
+  );
+}
+
+/** Shown when the order doesn't exist, isn't on this account, or the share link is broken; one message for all three. */
+async function InvoiceUnavailable({ self, hasKey }: { self: string; hasKey: boolean }) {
+  const { user } = await getMe();
+  const firstName = user?.name.split(' ')[0];
+  return (
+    <div className="flex min-h-dvh flex-col items-center justify-center px-6 text-center">
+      <p className="font-brand text-5xl text-padma sm:text-6xl">{BRAND_BN}</p>
+      <h1 className="mt-4 text-2xl font-bold">This invoice isn&apos;t available</h1>
+      <p className="mt-2 max-w-md text-ink-soft">
+        {hasKey ? 'The link may be incomplete or copied wrongly. ' : 'It may belong to a different account. '}
+        {user
+          ? `You're signed in as ${firstName}. Sign in with the account that placed the order, or ask them to send the invoice link again.`
+          : 'Sign in with the account that placed the order, or ask them to send the invoice link again.'}
+      </p>
+      <div className="mt-6 flex flex-wrap justify-center gap-3">
+        {user ? (
+          <>
+            <SwitchAccountButton next={self} />
+            <Link href="/account/orders" className="inline-flex h-10 items-center rounded-md border border-line bg-white px-4 text-[15px] font-semibold hover:border-ink-faint">
+              My orders
+            </Link>
+          </>
+        ) : (
+          <>
+            <Link href={`/login?next=${encodeURIComponent(self)}`} className="inline-flex h-10 items-center rounded-md bg-padma px-4 text-[15px] font-semibold text-white hover:bg-padma-dark">
+              Sign in
+            </Link>
+            <Link href="/" className="inline-flex h-10 items-center rounded-md border border-line bg-white px-4 text-[15px] font-semibold hover:border-ink-faint">
+              Go to the home page
+            </Link>
+          </>
+        )}
+      </div>
     </div>
   );
 }

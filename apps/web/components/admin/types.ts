@@ -22,6 +22,8 @@ export interface AdminOrder {
   shipLine: string;
   zone: string;
   zoneLabel: string;
+  /** The invoice's share link, for sending to the customer. */
+  invoiceUrl: string;
   note: string | null;
   riskScore: number;
   needsCall: boolean;
