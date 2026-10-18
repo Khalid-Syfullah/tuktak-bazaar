@@ -112,8 +112,14 @@ export function VoucherManager({ vouchers }: { vouchers: VoucherRow[] }) {
                       confirmLabel={v.usedCount > 0 ? 'Switch off voucher' : 'Delete voucher'}
                       onConfirm={async () => {
                         try {
-                          const res = await del<{ deactivated?: boolean }>(`/admin/vouchers/${v.id}`);
-                          toast(res?.deactivated ? 'Voucher was used before, so it was switched off' : 'Voucher deleted');
+                          const res = await del<{ deactivated?: boolean; reason?: 'used' | 'campaign' }>(`/admin/vouchers/${v.id}`);
+                          toast(
+                            !res?.deactivated
+                              ? 'Voucher deleted'
+                              : res.reason === 'campaign'
+                                ? 'A campaign reward uses this voucher, so it was switched off'
+                                : 'Voucher was used before, so it was switched off',
+                          );
                           router.refresh();
                         } catch (e) {
                           toast(errorMessage(e), 'error');

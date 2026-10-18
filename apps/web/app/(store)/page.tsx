@@ -1,10 +1,12 @@
 import Link from 'next/link';
+import { CampaignBlock } from '@/components/store/campaign/campaign-block';
 import { FlashStrip } from '@/components/store/flash-strip';
 import { HeroCarousel } from '@/components/store/hero-carousel';
 import { HomeSide } from '@/components/store/home-side';
 import { LoadMoreGrid } from '@/components/store/load-more-grid';
 import { ProductCard } from '@/components/store/product-card';
 import { serverApi } from '@/lib/server';
+import type { CurrentCampaign } from '@/lib/campaign';
 import type { Banner, CategoryNode, FlashSaleData, ProductCardData } from '@/lib/types';
 
 interface HomeData {
@@ -17,7 +19,7 @@ interface HomeData {
 }
 
 export default async function HomePage() {
-  const data = await serverApi<HomeData>('/home');
+  const [data, promo] = await Promise.all([serverApi<HomeData>('/home'), serverApi<CurrentCampaign>('/campaigns/current', { revalidate: 30 })]);
   if (!data) return null;
   const subcategories = data.categories.flatMap((c) => c.children);
 
@@ -40,6 +42,9 @@ export default async function HomePage() {
           ))}
         </div>
       )}
+
+      {/* Promo campaign: right before "Shop by category", whenever one is live or in its teaser. */}
+      {promo && <CampaignBlock data={promo} />}
 
       <section aria-labelledby="cat-title">
         <div className="mb-3 flex items-baseline justify-between">

@@ -5,7 +5,7 @@
  *   npm run test:e2e
  * It changes data (orders, stock, coins), so re-seed afterwards for a clean demo.
  */
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import ExcelJS from 'exceljs';
 
 // API_URL is the API's origin (the same variable the web app uses); "/api" is added if missing.
@@ -508,6 +508,301 @@ async function main() {
   await nusrat.post('/admin/inventory/bulk', { variantIds: [lampSku.id], action: 'price_set', value: 40 });
   const noDiscount = await nusrat.post('/admin/inventory/bulk', { variantIds: [lampSku.id], action: 'sale_pct_off', value: 1 });
   check('a percent off that rounds to the full price is refused', noDiscount.status === 400 && (await prisma.productVariant.findUniqueOrThrow({ where: { id: lampSku.id } })).salePrice === null);
+
+  // ───── Promo campaigns ─────
+  // In its own block so its names don't clash with earlier sections.
+  {
+    console.log('\nPromo campaigns');
+    const bangla = /[ঀ-৿]/;
+    const cur = await new Client().get('/campaigns/current');
+    const live = cur.data.campaign;
+    check('the live campaign is shown with the server time', cur.status === 200 && live?.slug === 'tuktak-mega-sale' && live.status === 'LIVE' && !!cur.data.serverNow, cur.data);
+    check('campaign text is Bangla and the game says its style', bangla.test(live.title) && live.game?.style === 'MYSTERY_BOX' && live.game.rewards.every((r: any) => bangla.test(r.label)));
+    const oddsSum = live.game.rewards.reduce((s: number, r: any) => s + r.odds, 0);
+    check('reward odds add up to 100%', Math.abs(oddsSum - 100) < 0.5, oddsSum);
+    const flashDeal = live.deals.find((d: any) => d.soldPercent !== null);
+    const dbFlash = await prisma.flashSaleItem.findFirstOrThrow({
+      where: { variant: { product: { slug: flashDeal?.productSlug } }, flashSale: { campaigns: { some: { id: live.id } } } },
+    });
+    check(
+      'flash-sale deals use the flash price and the share sold',
+      flashDeal.price === dbFlash.flashPrice && flashDeal.soldPercent === Math.min(100, Math.round((dbFlash.soldQty / dbFlash.quantityLimit) * 100)),
+      flashDeal,
+    );
+    const cheaper = await prisma.flashSale.create({
+      data: {
+        title: 'e2e overlapping sale', startsAt: new Date(Date.now() - 60_000), endsAt: new Date(Date.now() + 3600_000),
+        items: { create: { variantId: dbFlash.variantId, flashPrice: dbFlash.flashPrice - 10, quantityLimit: 5 } },
+      },
+    });
+    const withOverlap = (await new Client().get('/campaigns/current')).data.campaign;
+    const overlapped = withOverlap.deals.find((d: any) => d.productSlug === flashDeal.productSlug);
+    await prisma.flashSale.update({ where: { id: cheaper.id }, data: { isActive: false } });
+    check(
+      'with overlapping flash sales, a deal shows the price checkout charges, and refreshes when the cheaper sale ends',
+      overlapped?.price === dbFlash.flashPrice - 10 && overlapped?.soldPercent === flashDeal.soldPercent && Date.parse(withOverlap.refreshAt) <= cheaper.endsAt.getTime(),
+      { overlapped, refreshAt: withOverlap.refreshAt, cheaperEnds: cheaper.endsAt },
+    );
+    const picked = live.deals.find((d: any) => d.soldPercent === null);
+    await prisma.product.update({ where: { slug: picked.productSlug }, data: { status: 'DRAFT' } });
+    const withoutHidden = (await new Client().get('/campaigns/current')).data.campaign;
+    await prisma.product.update({ where: { slug: picked.productSlug }, data: { status: 'ACTIVE' } });
+    check('hidden products drop out of the deals', !withoutHidden.deals.some((d: any) => d.productSlug === picked.productSlug));
+
+    // Admin: who may manage campaigns, validation, priority, teaser, duplicate
+    check('staff without marketing access cannot manage campaigns', (await rafi.get('/admin/campaigns')).status === 403);
+    const iso = (h: number) => new Date(Date.now() + h * 3600_000).toISOString();
+    const form = (over: Record<string, unknown> = {}) => ({
+      slug: `e2e-${Date.now().toString(36)}`, title: 'পরীক্ষা অফার', tagline: null, theme: 'PAYDAY', heroImageUrl: null,
+      ctaLabel: 'দেখুন', ctaHref: '/flash-sale', startsAt: iso(2), endsAt: iso(48), teaserHours: 24, priority: 50,
+      confetti: false, gameEnabled: false, gameStyle: 'MYSTERY_BOX', isActive: true, voucherId: null, flashSaleId: null,
+      productIds: [], ticker: [{ text: 'পরীক্ষা চলছে', href: null }], rewards: [], ...over,
+    });
+    const eid25 = await prisma.voucher.findUniqueOrThrow({ where: { code: 'EID25' } });
+    const badDates = await nusrat.post('/admin/campaigns', form({ endsAt: iso(1) }));
+    const badVoucher = await nusrat.post('/admin/campaigns', form({ voucherId: eid25.id }));
+    const badWeight = await nusrat.post('/admin/campaigns', form({ gameEnabled: true, rewards: [{ kind: 'NONE', label: 'আবার', weight: 0 }, { kind: 'COINS', coins: 5, label: '৫ কয়েন', weight: 1 }] }));
+    const smallWheel = await nusrat.post('/admin/campaigns', form({
+      gameEnabled: true, gameStyle: 'SPIN_WHEEL',
+      rewards: [1, 2, 3].map((n) => ({ kind: 'COINS', coins: n, label: `${n} কয়েন`, weight: 1 })),
+    }));
+    check(
+      'campaign validation catches bad dates, a non-collectible voucher, zero odds and a small wheel',
+      [badDates, badVoucher, badWeight, smallWheel].every((r) => r.status === 400),
+      [badDates, badVoucher, badWeight, smallWheel].map((r) => r.status),
+    );
+    const teaserForm = form();
+    const created = await nusrat.post('/admin/campaigns', teaserForm);
+    const teaser = (await new Client().get('/campaigns/current')).data.campaign;
+    check('a higher-priority campaign shows its teaser before it starts', created.status === 201 && teaser?.id === created.data.id && teaser.status === 'TEASER', teaser?.status);
+    const preview = await nusrat.post('/admin/campaigns/preview', { ...teaserForm, id: created.data.id, at: iso(3) });
+    check('the admin preview shows the campaign at any time', preview.status === 200 && preview.data.campaign.status === 'LIVE');
+    const auditBefore = await prisma.auditLog.count({ where: { action: { startsWith: 'campaign.' } } });
+    await nusrat.patch(`/admin/campaigns/${created.data.id}`, { ...teaserForm, isActive: false });
+    check('turning a campaign off hides it at once', (await new Client().get('/campaigns/current')).data.campaign?.id === live.id);
+    await prisma.campaign.create({ data: { slug: 'e2e-ended', title: 'শেষ হওয়া অফার', startsAt: new Date(Date.now() - 48 * 3600_000), endsAt: new Date(Date.now() - 3600_000), priority: 99 } });
+    check('ended campaigns are never shown', (await new Client().get('/campaigns/current')).data.campaign?.id === live.id);
+    const linkedSale = await prisma.flashSale.findFirstOrThrow({ where: { campaigns: { some: { id: live.id } } } });
+    check(
+      'a campaign says when its data next changes: its start, or a flash sale behind its deals ending',
+      teaser.refreshAt === teaser.startsAt && Date.parse(live.refreshAt) > Date.parse(cur.data.serverNow) && Date.parse(live.refreshAt) <= linkedSale.endsAt.getTime(),
+      { teaser: [teaser.refreshAt, teaser.startsAt], live: live.refreshAt, saleEnds: linkedSale.endsAt },
+    );
+    const soon = new Date(Date.now() + 10 * 60_000);
+    const later = await prisma.campaign.create({
+      data: { slug: 'e2e-later', title: 'পরের অফার', startsAt: new Date(soon.getTime() + 3600_000), endsAt: new Date(soon.getTime() + 5 * 3600_000), teaserHours: 1, priority: 60 },
+    });
+    const beforeTakeover = (await new Client().get('/campaigns/current')).data.campaign;
+    await prisma.campaign.update({ where: { id: live.id }, data: { isActive: false } });
+    const nothingYet = (await new Client().get('/campaigns/current')).data;
+    await prisma.campaign.update({ where: { id: live.id }, data: { isActive: true } });
+    await prisma.campaign.update({ where: { id: later.id }, data: { isActive: false } });
+    check(
+      "a higher-priority campaign's teaser start counts as a change",
+      beforeTakeover?.id === live.id && Date.parse(beforeTakeover.refreshAt) === soon.getTime(),
+      [beforeTakeover?.refreshAt, soon.toISOString()],
+    );
+    check(
+      'with nothing to show yet, the answer says when the next teaser starts',
+      nothingYet.campaign === null && Date.parse(nothingYet.refreshAt) === soon.getTime(),
+      nothingYet,
+    );
+    // Starts over a week out, but its week-long teaser begins at `soon`.
+    const far = await prisma.campaign.create({
+      data: { slug: 'e2e-far', title: 'দূরের অফার', startsAt: new Date(soon.getTime() + 168 * 3600_000), endsAt: new Date(soon.getTime() + 200 * 3600_000), teaserHours: 168, priority: 70 },
+    });
+    const beforeFar = (await new Client().get('/campaigns/current')).data.campaign;
+    await prisma.campaign.update({ where: { id: far.id }, data: { isActive: false } });
+    check(
+      'a campaign starting over a week out still counts when its teaser is near',
+      beforeFar?.id === live.id && Date.parse(beforeFar.refreshAt) === soon.getTime(),
+      [beforeFar?.refreshAt, soon.toISOString()],
+    );
+    const pickedVariant = await prisma.productVariant.findFirstOrThrow({ where: { isActive: true, stock: { gt: 0 }, product: { status: 'ACTIVE' }, flashItems: { none: {} } } });
+    const futureSale = await prisma.flashSale.create({
+      data: { title: 'e2e future sale', startsAt: new Date(Date.now() + 3 * 3600_000), endsAt: new Date(Date.now() + 5 * 3600_000), items: { create: { variantId: pickedVariant.id, flashPrice: Math.round(pickedVariant.price / 2), quantityLimit: 10 } } },
+    });
+    const atSale = await nusrat.post('/admin/campaigns/preview', { ...form({ isActive: false, productIds: [pickedVariant.id] }), at: iso(4) });
+    await prisma.flashSale.update({ where: { id: futureSale.id }, data: { isActive: false } });
+    check(
+      'the preview prices hand-picked deals at the chosen moment',
+      atSale.data.campaign?.deals?.[0]?.price === Math.round(pickedVariant.price / 2),
+      atSale.data.campaign?.deals,
+    );
+    const dup = await nusrat.post(`/admin/campaigns/${created.data.id}/duplicate`);
+    check('duplicating makes an inactive copy', dup.status === 201 && dup.data.isActive === false && dup.data.slug.endsWith('-copy'), dup.data);
+    await nusrat.del(`/admin/campaigns/${dup.data.id}`);
+    await new Promise((r) => setTimeout(r, 300));
+    const audited = await prisma.auditLog.findMany({ where: { action: { startsWith: 'campaign.' } }, select: { action: true } });
+    check(
+      'campaign changes are audited and previews are not',
+      ['campaign.create', 'campaign.update', 'campaign.duplicate', 'campaign.delete'].every((a) => audited.some((x) => x.action === a)) &&
+          audited.length >= auditBefore + 3 &&
+          (await prisma.auditLog.count({ where: { OR: [{ action: { contains: 'preview' } }, { summary: { contains: 'preview' } }] } })) === 0,
+      audited.map((a) => a.action),
+    );
+
+    // Fixes from the admin build
+    const search = await nusrat.get('/admin/campaigns/products?q=kettle');
+    check('marketing staff can search products for deals', search.status === 200 && search.data.items.length > 0 && (await rafi.get('/admin/campaigns/products?q=kettle')).status === 403);
+    const early = await nusrat.post('/admin/campaigns/preview', { ...teaserForm, teaserHours: 0, at: iso(1) });
+    check('the preview shows nothing before the teaser starts', early.status === 200 && early.data.campaign === null, early.data);
+    const mega50 = await prisma.voucher.findUniqueOrThrow({ where: { code: 'MEGA50' } });
+    const offForm = form({ voucherId: mega50.id });
+    const withVoucher = await nusrat.post('/admin/campaigns', offForm);
+    await prisma.voucher.update({ where: { id: mega50.id }, data: { isCollectible: false } });
+    const turnedOff = await nusrat.patch(`/admin/campaigns/${withVoucher.data.id}`, { ...offForm, isActive: false });
+    const turnedOn = await nusrat.patch(`/admin/campaigns/${withVoucher.data.id}`, { ...offForm, isActive: true });
+    await prisma.voucher.update({ where: { id: mega50.id }, data: { isCollectible: true } });
+    check('a campaign can always be switched off, but not back on with a broken voucher', turnedOff.status === 200 && turnedOn.status === 400, [turnedOff.status, turnedOn.status]);
+
+    // The daily game
+    const shopper = async (name: string) => {
+      const c = new Client();
+      const phone = `018${Math.floor(10000000 + Math.random() * 89999999)}`;
+      const code = (await c.post('/auth/otp/request', { phone })).data.devCode;
+      const v = await c.post('/auth/otp/verify', { phone, code, name });
+      return { c, user: v.data.user as { id: string } };
+    };
+    check('playing needs an account', (await new Client().post(`/campaigns/${live.id}/play`)).status === 401);
+    const player = await shopper('Lucky Player');
+    check('a campaign that is off or not started cannot be played', (await player.c.post(`/campaigns/${created.data.id}/play`)).status !== 200);
+    const first = await player.c.post(`/campaigns/${live.id}/play`);
+    const rewardIds = live.game.rewards.map((r: any) => r.id);
+    check('the server picks a reward from this campaign', first.status === 200 && rewardIds.includes(first.data.reward.id), first.data);
+    const again = await player.c.post(`/campaigns/${live.id}/play`);
+    check('one play per day, with a Bangla message', again.status === 409 && bangla.test(again.data.message), again.data);
+    const mine = await player.c.get(`/campaigns/${live.id}/me`);
+    check("the shopper sees today's result", mine.data.playedToday === true && mine.data.todayReward?.id === first.data.reward.id, mine.data);
+    const gameCampaign = (slug: string, rewards: Prisma.CampaignRewardCreateWithoutCampaignInput[]) =>
+      prisma.campaign.create({
+        data: { slug, title: 'খেলা পরীক্ষা', startsAt: new Date(Date.now() - 3600_000), endsAt: new Date(Date.now() + 3600_000), priority: -50, gameEnabled: true, rewards: { create: rewards } },
+      });
+    const coinGame = await gameCampaign('e2e-coins', [{ kind: 'COINS', coins: 15, label: '১৫ কয়েন', weight: 1 }]);
+    const coinsBefore = (await prisma.user.findUniqueOrThrow({ where: { id: player.user.id } })).coins;
+    const coinWin = await player.c.post(`/campaigns/${coinGame.id}/play`);
+    const coinsAfter = (await prisma.user.findUniqueOrThrow({ where: { id: player.user.id } })).coins;
+    // Looked up by campaign: the player's earlier play on the live campaign may also have won coins.
+    const coinTxn = await prisma.coinTransaction.findFirst({ where: { userId: player.user.id, reason: 'CAMPAIGN_REWARD', refId: coinGame.id } });
+    check('a coin reward is credited to the shopper', coinWin.data.reward?.coins === 15 && coinsAfter === coinsBefore + 15 && coinTxn?.amount === 15, coinWin.data);
+    const freeship = await prisma.voucher.findUniqueOrThrow({ where: { code: 'FREESHIP' } });
+    const voucherGame = await gameCampaign('e2e-voucher', [{ kind: 'VOUCHER', voucher: { connect: { id: freeship.id } }, label: 'ফ্রি ডেলিভারি', weight: 1 }]);
+    // A new shopper: the first player may already hold FREESHIP from the live campaign, and a held voucher can't be won.
+    const voucherPlayer = await shopper('Voucher Player');
+    const voucherWin = await voucherPlayer.c.post(`/campaigns/${voucherGame.id}/play`);
+    const myVouchers = (await voucherPlayer.c.get('/vouchers/mine')).data;
+    check(
+      'a voucher reward lands in the shopper’s vouchers',
+      voucherWin.data.reward?.voucherCode === 'FREESHIP' && JSON.stringify(myVouchers).includes('FREESHIP'),
+      voucherWin.data,
+    );
+    const rush = await gameCampaign('e2e-rush', [
+      { kind: 'COINS', coins: 5, label: '৫ কয়েন', weight: 1000, stock: 5 },
+      { kind: 'NONE', label: 'আবার চেষ্টা করুন', weight: 1 },
+    ]);
+    const crowd = await Promise.all(Array.from({ length: 20 }, (_, i) => shopper(`Rush ${i}`)));
+    const plays = await Promise.all(crowd.map((s) => s.c.post(`/campaigns/${rush.id}/play`)));
+    const wins = plays.filter((p) => p.data.reward?.kind === 'COINS').length;
+    const rushReward = await prisma.campaignReward.findFirstOrThrow({ where: { campaignId: rush.id, kind: 'COINS' } });
+    check('20 plays at once never give more than the stock', plays.every((p) => p.status === 200) && wins === 5 && rushReward.givenCount === 5, { wins, given: rushReward.givenCount, statuses: plays.map((p) => p.status) });
+    const rushStats = await nusrat.get(`/admin/campaigns/${rush.id}/stats`);
+    check('campaign stats count plays and rewards', rushStats.data.plays === 20 && rushStats.data.players === 20 && rushStats.data.rewards.find((r: any) => r.kind === 'COINS')?.givenCount === 5, rushStats.data);
+
+    // Fixes from the PR review
+    const heldGame = await gameCampaign('e2e-held', [
+      { kind: 'VOUCHER', voucher: { connect: { id: freeship.id } }, label: 'ফ্রি ডেলিভারি', weight: 1000, stock: 3 },
+      { kind: 'NONE', label: 'আবার চেষ্টা করুন', weight: 1 },
+    ]);
+    const heldPlay = await voucherPlayer.c.post(`/campaigns/${heldGame.id}/play`);
+    const heldReward = await prisma.campaignReward.findFirstOrThrow({ where: { campaignId: heldGame.id, kind: 'VOUCHER' } });
+    check('a voucher the shopper already holds is not won again', heldPlay.data.reward?.kind === 'NONE' && heldReward.givenCount === 0, heldPlay.data);
+    const expired = await prisma.voucher.create({
+      data: { code: `E2EOLD${Date.now().toString(36).toUpperCase()}`, title: 'পুরনো ভাউচার', type: 'FIXED', value: 20, startsAt: new Date(Date.now() - 48 * 3600_000), endsAt: new Date(Date.now() - 3600_000) },
+    });
+    const oddsPreview = await nusrat.post('/admin/campaigns/preview', {
+      ...form({ isActive: false, gameEnabled: true, voucherId: eid25.id }),
+      at: iso(3),
+      rewards: [
+        { kind: 'VOUCHER', voucherId: expired.id, label: '৳২০ ছাড়', weight: 1 },
+        { kind: 'COINS', coins: 5, label: '৫ কয়েন', weight: 1 },
+      ],
+    });
+    const shownOdds = oddsPreview.data.campaign?.game?.rewards.map((r: any) => r.odds);
+    check('advertised odds leave out a voucher that can no longer be won', JSON.stringify(shownOdds) === '[0,100]', oddsPreview.data);
+    check('the banner only offers a voucher that can be collected now', oddsPreview.status === 200 && oddsPreview.data.campaign.voucher === null, oddsPreview.data.campaign?.voucher);
+    const longSlug = `e2e-long-${'a'.repeat(51)}`;
+    const longCampaign = await prisma.campaign.create({ data: { slug: longSlug, title: 'লম্বা নাম', startsAt: new Date(Date.now() + 3600_000), endsAt: new Date(Date.now() + 7200_000), isActive: false } });
+    const copy1 = await nusrat.post(`/admin/campaigns/${longCampaign.id}/duplicate`);
+    const copy2 = await nusrat.post(`/admin/campaigns/${longCampaign.id}/duplicate`);
+    check(
+      'duplicating a campaign with a long slug gives distinct, valid slugs',
+      copy1.status === 201 && copy2.status === 201 && copy1.data.slug.endsWith('-copy') && copy2.data.slug.endsWith('-copy-2') &&
+        [copy1.data.slug, copy2.data.slug].every((s: string) => s.length <= 60 && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(s)),
+      [copy1.data?.slug, copy2.data?.slug],
+    );
+
+    // Second review round
+    const stamp = Date.now().toString(36).toUpperCase();
+    const validity = { startsAt: new Date(Date.now() - 3600_000), endsAt: new Date(Date.now() + 48 * 3600_000) };
+    const fullyUsed = await prisma.voucher.create({ data: { code: `E2EFULL${stamp}`, title: 'শেষ হওয়া ভাউচার', type: 'FIXED', value: 30, usageLimit: 1, usedCount: 1, ...validity } });
+    const usedUp = await prisma.voucher.create({ data: { code: `E2EUSED${stamp}`, title: 'ব্যবহৃত ভাউচার', type: 'FIXED', value: 30, perUserLimit: 1, ...validity } });
+    const notYet = await prisma.voucher.create({
+      data: { code: `E2ESOON${stamp}`, title: 'আসছে ভাউচার', type: 'FIXED', value: 30, startsAt: new Date(Date.now() + 3600_000), endsAt: new Date(Date.now() + 48 * 3600_000) },
+    });
+    const herOrder = await prisma.order.findFirstOrThrow({ where: { userId: login.data.user.id, redemption: null } });
+    await prisma.voucherRedemption.create({ data: { voucherId: usedUp.id, userId: login.data.user.id, orderId: herOrder.id, discount: 30 } });
+    const limitGame = await gameCampaign('e2e-limits', [
+      { kind: 'VOUCHER', voucher: { connect: { id: fullyUsed.id } }, label: '৳৩০ ছাড়', weight: 1000 },
+      { kind: 'VOUCHER', voucher: { connect: { id: usedUp.id } }, label: '৳৩০ ছাড়', weight: 1000 },
+      { kind: 'VOUCHER', voucher: { connect: { id: notYet.id } }, label: '৳৩০ ছাড়', weight: 1000 },
+      { kind: 'NONE', label: 'আবার চেষ্টা করুন', weight: 1 },
+    ]);
+    const limitPlay = await ayesha.post(`/campaigns/${limitGame.id}/play`);
+    const limitGiven = await prisma.campaignReward.aggregate({ where: { campaignId: limitGame.id, kind: 'VOUCHER' }, _sum: { givenCount: true } });
+    check(
+      "vouchers checkout would refuse (fully used, not started yet, or the shopper's own limit used up) are not won",
+      limitPlay.data.reward?.kind === 'NONE' && limitGiven._sum.givenCount === 0,
+      limitPlay.data,
+    );
+    const delVoucher = await nusrat.del(`/admin/vouchers/${notYet.id}`);
+    check(
+      'deleting a voucher a campaign reward uses switches it off instead',
+      delVoucher.status === 200 && delVoucher.data.deactivated === true && delVoucher.data.reason === 'campaign' &&
+        (await prisma.voucher.findUniqueOrThrow({ where: { id: notYet.id } })).isActive === false,
+      delVoucher.data,
+    );
+    const rushRewards = await prisma.campaignReward.findMany({ where: { campaignId: rush.id }, orderBy: { sortOrder: 'asc' } });
+    const rushForm = (coins: number, label: string) =>
+      form({
+        slug: 'e2e-rush', isActive: false, gameEnabled: true, startsAt: rush.startsAt.toISOString(), endsAt: rush.endsAt.toISOString(),
+        rewards: rushRewards.map((r) =>
+          r.kind === 'COINS' ? { id: r.id, kind: 'COINS', coins, label, weight: r.weight, stock: r.stock } : { id: r.id, kind: r.kind, label: r.label, weight: r.weight, stock: r.stock },
+        ),
+      });
+    const changePrize = await nusrat.patch(`/admin/campaigns/${rush.id}`, rushForm(50, '৫০ কয়েন'));
+    const changeWording = await nusrat.patch(`/admin/campaigns/${rush.id}`, rushForm(5, '৫টি কয়েন'));
+    check(
+      "a reward that has been won keeps its prize, but its wording can change",
+      changePrize.status === 400 && changeWording.status === 200,
+      [changePrize.status, changePrize.data?.message, changeWording.status, changeWording.data?.message],
+    );
+    const wonReward = await prisma.campaignReward.findFirstOrThrow({ where: { campaignId: voucherGame.id } });
+    await prisma.voucher.update({ where: { id: freeship.id }, data: { isActive: false } });
+    const voucherGameForm = (extra: Record<string, unknown>[]) =>
+      form({
+        slug: 'e2e-voucher', title: 'খেলা পরীক্ষা ২', gameEnabled: true, startsAt: voucherGame.startsAt.toISOString(), endsAt: voucherGame.endsAt.toISOString(),
+        rewards: [{ id: wonReward.id, kind: 'VOUCHER', voucherId: freeship.id, label: wonReward.label, weight: wonReward.weight, stock: wonReward.stock }, ...extra],
+      });
+    const keepWon = await nusrat.patch(`/admin/campaigns/${voucherGame.id}`, voucherGameForm([{ kind: 'NONE', label: 'আবার চেষ্টা করুন', weight: 1 }]));
+    const addOff = await nusrat.patch(`/admin/campaigns/${voucherGame.id}`, voucherGameForm([{ kind: 'VOUCHER', voucherId: freeship.id, label: 'ফ্রি ডেলিভারি', weight: 1 }]));
+    await prisma.voucher.update({ where: { id: freeship.id }, data: { isActive: true } });
+    check(
+      'a won reward may keep a voucher switched off since, but a new reward may not use it',
+      wonReward.givenCount > 0 && keepWon.status === 200 && addOff.status === 400,
+      [wonReward.givenCount, keepWon.status, keepWon.data?.message, addOff.status, addOff.data?.message],
+    );
+    await prisma.campaign.updateMany({ where: { slug: { startsWith: 'e2e-' } }, data: { isActive: false } });
+  }
 
   console.log(failures ? `\n${failures} check(s) failed` : '\nAll checks passed');
   await prisma.$disconnect();

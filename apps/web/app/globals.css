@@ -95,6 +95,115 @@
   }
 }
 
+/*
+ * Promo campaigns (components/store/campaign). Only transform and opacity animate.
+ * Entrance effects run once; loops are switched off entirely for reduced motion (below).
+ */
+@keyframes cmp-drop {
+  0% { opacity: 0; transform: translateY(-28px) scale(0.96); }
+  60% { opacity: 1; transform: translateY(5px) scale(1.01); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes cmp-wobble {
+  0%, 82%, 100% { transform: rotate(0deg) scale(1); }
+  86% { transform: rotate(-8deg) scale(1.06); }
+  90% { transform: rotate(7deg) scale(1.06); }
+  94% { transform: rotate(-4deg) scale(1.03); }
+}
+@keyframes cmp-sweep {
+  0%, 70% { transform: translateX(-120%) skewX(-20deg); }
+  100% { transform: translateX(260%) skewX(-20deg); }
+}
+@keyframes cmp-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.035); }
+}
+@keyframes cmp-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+@keyframes cmp-flip {
+  0% { opacity: 0.2; transform: perspective(160px) rotateX(-90deg); }
+  100% { opacity: 1; transform: perspective(160px) rotateX(0deg); }
+}
+@keyframes cmp-marquee {
+  to { transform: translateX(var(--cmp-shift, -50%)); }
+}
+@keyframes cmp-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes cmp-strike {
+  from { transform: translateY(-50%) scaleX(0); }
+  to { transform: translateY(-50%) scaleX(1); }
+}
+@keyframes cmp-stamp {
+  0% { opacity: 0; transform: scale(1.45) rotate(-6deg); }
+  70% { opacity: 1; transform: scale(0.96) rotate(1deg); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes cmp-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(var(--p, 0)); }
+}
+@keyframes cmp-shake {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(-7deg) translateY(-2px); }
+  40% { transform: rotate(6deg); }
+  60% { transform: rotate(-5deg) translateY(-2px); }
+  80% { transform: rotate(4deg); }
+}
+@keyframes cmp-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes cmp-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes cmp-snow {
+  from { transform: translateY(-14px); }
+  to { transform: translateY(14px); }
+}
+
+.cmp-drop { animation: cmp-drop 700ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+.cmp-wobble { animation: cmp-wobble 3.2s ease-in-out infinite; }
+.cmp-sweep::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  animation: cmp-sweep 3.6s ease-in-out infinite;
+  pointer-events: none;
+}
+.cmp-pulse { animation: cmp-pulse 2.4s ease-in-out infinite; }
+.cmp-float { animation: cmp-float 4.5s ease-in-out infinite; }
+.cmp-flip { display: inline-block; transform-origin: 50% 0; animation: cmp-flip 380ms ease-out both; }
+.cmp-marquee { animation: cmp-marquee 30s linear infinite; }
+.cmp-strip:hover .cmp-marquee,
+.cmp-strip:focus-within .cmp-marquee { animation-play-state: paused; }
+.cmp-fade { animation: cmp-fade 500ms ease-out both; }
+.cmp-snow { animation: cmp-snow 6s ease-in-out infinite alternate; }
+.cmp-bob { animation: cmp-bob 2.6s ease-in-out infinite; }
+.cmp-shake { animation: cmp-shake 450ms ease-in-out infinite; }
+.cmp-rise { animation: cmp-rise 450ms ease-out both; }
+.cmp-glow { animation: cmp-fade 600ms ease-out both; }
+
+/*
+ * Deal cards: the strike line, new price and stock bar play when the card scrolls into view.
+ * The final state is the default, so prices are never hidden if the script doesn't run; the list is
+ * only "armed" (cards hidden until they enter the view) once the script is watching them.
+ */
+.cmp-deal .cmp-strike { transform: translateY(-50%) scaleX(1); transform-origin: left; }
+.cmp-deal .cmp-fill { transform: scaleX(var(--p, 0)); transform-origin: left; }
+[data-armed] .cmp-deal:not([data-in]) .cmp-strike { transform: translateY(-50%) scaleX(0); }
+[data-armed] .cmp-deal:not([data-in]) .cmp-fill { transform: scaleX(0); }
+[data-armed] .cmp-deal:not([data-in]) .cmp-stamp { opacity: 0; }
+.cmp-deal[data-in] .cmp-strike { animation: cmp-strike 350ms 120ms ease-out both; }
+.cmp-deal[data-in] .cmp-stamp { animation: cmp-stamp 300ms 380ms ease-out both; }
+.cmp-deal[data-in] .cmp-fill { animation: cmp-fill 900ms 300ms ease-out both; }
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -103,6 +212,23 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  /* Loops off entirely, and deal cards show their final state straight away. */
+  .cmp-wobble,
+  .cmp-sweep::after,
+  .cmp-pulse,
+  .cmp-float,
+  .cmp-marquee,
+  .cmp-snow,
+  .cmp-bob,
+  .cmp-shake,
+  .cmp-flip,
+  .cmp-drop {
+    animation: none !important;
+  }
+  .cmp-sweep::after { display: none; }
+  .cmp-deal .cmp-strike,
+  .cmp-deal .cmp-fill,
+  .cmp-deal .cmp-stamp { animation: none !important; }
 }
 
 @media print {

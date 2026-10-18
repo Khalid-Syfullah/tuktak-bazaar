@@ -8,7 +8,7 @@ import { hash } from 'bcryptjs';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { BRANDS, CATEGORIES, PRODUCTS, ProductSeed, SYNONYMS } from './catalog-data';
-import { bannerSvg, categorySvg, productSvg, stripSvg } from './seed-art';
+import { bannerSvg, categorySvg, illustration, productSvg, stripSvg } from './seed-art';
 
 const prisma = new PrismaClient();
 const UPLOAD_DIR = resolve(process.env.UPLOAD_DIR || join(__dirname, '..', 'uploads'));
@@ -114,6 +114,7 @@ const QUESTIONS: [string, string, string][] = [
 async function wipe() {
   // Delete children before parents.
   const tables = [
+    'CampaignPlay', 'CampaignReward', 'CampaignTickerItem', 'CampaignProduct', 'Campaign',
     'AuditLog', 'SmsLog', 'TicketMessage', 'SupportTicket', 'ProductAlert', 'ShipmentEvent', 'Shipment',
     'Notification', 'CoinTransaction', 'Question', 'Review', 'ReturnRequest', 'Payment', 'OrderEvent', 'OrderItem',
     'VoucherRedemption', 'Order', 'UserVoucher', 'Voucher', 'FlashSaleItem', 'FlashSale', 'Banner', 'CartItem', 'Cart',
@@ -445,6 +446,90 @@ async function main() {
   ];
   const vouchers = [];
   for (const v of voucherData) vouchers.push(await prisma.voucher.create({ data: v }));
+
+  // ───── Promo campaigns ─────
+  // One live campaign (mystery box) and one scheduled Eid campaign (spin wheel). All shopper-facing text is Bangla.
+  const voucherBy = (code: string) => vouchers.find((v) => v.code === code)!;
+  const mega50 = await prisma.voucher.create({
+    data: { code: 'MEGA50', title: 'মেগা সেল: ৳৫০ ছাড়', description: '৳৯৯৯-এর বেশি অর্ডারে', type: VoucherType.FIXED, value: 50, minSpend: 999, startsAt: hours(-1), endsAt: hours(24 * 7), perUserLimit: 1, isCollectible: true },
+  });
+  const eidGift = await prisma.voucher.create({
+    data: { code: 'EIDGIFT100', title: 'ঈদ উপহার: ৳১০০ ছাড়', description: '৳১৫০০-এর বেশি অর্ডারে', type: VoucherType.FIXED, value: 100, minSpend: 1500, startsAt: hours(24 * 10), endsAt: hours(24 * 15), perUserLimit: 1, isCollectible: false },
+  });
+  // Floating product art for the banner: two products on a transparent background.
+  const heroArt = writeAsset(
+    'campaigns/mega-sale-art.svg',
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="1200" height="800">
+  <g transform="translate(-40 20) scale(0.95)">${illustration('phone', '#2b3040', '#4f8cff', 'cm1')}</g>
+  <g transform="translate(430 120) scale(0.85)">${illustration('headphones', '#e9dcc4', '#ff7a45', 'cm2')}</g>
+</svg>`,
+  );
+  const picks = ['pulse-pro-amoled-smart-watch', 'sonora-wave-anc-wireless-headphones', 'ranna-3-in-1-blender-750w', 'bunon-cotton-panjabi']
+    .map((slug) => variantsBySlug.get(slug)?.[0]?.id)
+    .filter((id): id is string => !!id);
+  await prisma.campaign.create({
+    data: {
+      slug: 'tuktak-mega-sale',
+      title: 'টুকটাক মেগা সেল',
+      tagline: 'বছরের সবচেয়ে বড় ছাড়',
+      theme: 'MEGA_SALE',
+      heroImageUrl: heroArt,
+      ctaLabel: 'এখনই কিনুন',
+      ctaHref: '/flash-sale',
+      startsAt: hours(-1),
+      endsAt: hours(24 * 7),
+      teaserHours: 24,
+      priority: 10,
+      gameEnabled: true,
+      gameStyle: 'MYSTERY_BOX',
+      voucherId: mega50.id,
+      flashSaleId: flash.id,
+      products: { create: picks.map((variantId, i) => ({ variantId, sortOrder: i })) },
+      ticker: {
+        create: [
+          { text: '৳২০০০+ অর্ডারে ঢাকায় ফ্রি ডেলিভারি', href: '/flash-sale', sortOrder: 0 },
+          { text: 'bKash-এ পেমেন্টে বিশেষ ছাড়', href: null, sortOrder: 1 },
+          { text: 'প্রতিদিন খেলুন — জিতুন ভাউচার ও কয়েন', href: '/#campaign', sortOrder: 2 },
+        ],
+      },
+      rewards: {
+        create: [
+          { kind: 'VOUCHER', voucherId: mega50.id, label: '৳৫০ ছাড়', weight: 10, stock: 200, sortOrder: 0 },
+          { kind: 'COINS', coins: 20, label: '২০ কয়েন', weight: 30, sortOrder: 1 },
+          { kind: 'VOUCHER', voucherId: voucherBy('FREESHIP').id, label: 'ফ্রি ডেলিভারি', weight: 20, stock: 300, sortOrder: 2 },
+          { kind: 'NONE', label: 'আবার চেষ্টা করুন', weight: 40, sortOrder: 3 },
+        ],
+      },
+    },
+  });
+  await prisma.campaign.create({
+    data: {
+      slug: 'eid-utsob-offer',
+      title: 'ঈদ উৎসব অফার',
+      tagline: 'ঈদের কেনাকাটায় খুশির ছাড়',
+      theme: 'EID',
+      ctaLabel: 'অফার দেখুন',
+      ctaHref: '/categories',
+      startsAt: hours(24 * 10),
+      endsAt: hours(24 * 14),
+      teaserHours: 48,
+      priority: 5,
+      gameEnabled: true,
+      gameStyle: 'SPIN_WHEEL',
+      voucherId: voucherBy('SAVE10').id,
+      ticker: { create: [{ text: 'ঈদ মোবারক! সব ক্যাটাগরিতে উৎসবের ছাড়', href: '/categories', sortOrder: 0 }] },
+      rewards: {
+        create: [
+          { kind: 'VOUCHER', voucherId: eidGift.id, label: '৳১০০ ছাড়', weight: 5, stock: 100, sortOrder: 0 },
+          { kind: 'COINS', coins: 50, label: '৫০ কয়েন', weight: 15, sortOrder: 1 },
+          { kind: 'COINS', coins: 20, label: '২০ কয়েন', weight: 30, sortOrder: 2 },
+          { kind: 'VOUCHER', voucherId: voucherBy('FREESHIP').id, label: 'ফ্রি ডেলিভারি', weight: 15, stock: 200, sortOrder: 3 },
+          { kind: 'COINS', coins: 10, label: '১০ কয়েন', weight: 20, sortOrder: 4 },
+          { kind: 'NONE', label: 'আবার চেষ্টা করুন', weight: 15, sortOrder: 5 },
+        ],
+      },
+    },
+  });
 
   // ───── Banners ─────
   const banners: Prisma.BannerCreateInput[] = [

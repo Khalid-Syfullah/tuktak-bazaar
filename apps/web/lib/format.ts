@@ -5,6 +5,16 @@ export function tk(amount: number | null | undefined): string {
   return `৳${taka.format(Math.round(amount ?? 0))}`;
 }
 
+/** 0–9 → ০–৯, for numbers inside Bangla text. */
+export function bn(value: number | string): string {
+  return String(value).replace(/\d/g, (d) => '০১২৩৪৫৬৭৮৯'[Number(d)]);
+}
+
+/** ৳১,২৪,৯৯০ — taka with lakh grouping and Bangla digits, for Bangla text. */
+export function tkBn(amount: number | null | undefined): string {
+  return bn(tk(amount));
+}
+
 export function compactCount(n: number): string {
   if (n >= 100000) return `${(n / 100000).toFixed(n >= 1000000 ? 0 : 1).replace(/\.0$/, '')} lakh`;
   if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;

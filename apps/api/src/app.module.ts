@@ -16,6 +16,9 @@ import { AlertsController } from './alerts/alerts.controller';
 import { AlertsService } from './alerts/alerts.service';
 import { ReviewsService } from './aftersale/reviews.service';
 import { AuthController } from './auth/auth.controller';
+import { AdminCampaignsController } from './campaigns/admin-campaigns.controller';
+import { CampaignsController } from './campaigns/campaigns.controller';
+import { CampaignsService } from './campaigns/campaigns.service';
 import { CartController } from './cart/cart.controller';
 import { CartService } from './cart/cart.service';
 import { CatalogController } from './catalog/catalog.controller';
@@ -91,6 +94,10 @@ class AdminModule {}
 @Module({ imports: [ShoppingModule], controllers: [AdminSystemController], providers: [JobsService] })
 class JobsModule {}
 
+/** Promo campaigns: the home-page banner, offer strip, deals and daily game, and their admin screens. */
+@Module({ controllers: [CampaignsController, AdminCampaignsController], providers: [CampaignsService] })
+class CampaignsModule {}
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -107,6 +114,7 @@ class JobsModule {}
     CustomerCareModule,
     AdminModule,
     JobsModule,
+    CampaignsModule,
   ],
   controllers: [HealthController],
   providers: [

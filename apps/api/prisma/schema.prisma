@@ -104,11 +104,32 @@ enum CoinReason {
   REDEEM
   REFUND
   ADJUSTMENT
+  CAMPAIGN_REWARD
 }
 
 enum BannerPlacement {
   HOME_HERO
   HOME_STRIP
+}
+
+enum CampaignTheme {
+  MEGA_SALE
+  PAYDAY
+  EID
+  BOISHAKH
+  PUJA
+  WINTER
+}
+
+enum GameStyle {
+  MYSTERY_BOX
+  SPIN_WHEEL
+}
+
+enum RewardKind {
+  VOUCHER
+  COINS
+  NONE
 }
 
 enum ReviewStatus {
@@ -187,6 +208,7 @@ model User {
   assigned      SupportTicket[]     @relation("TicketAssignee")
   ticketPosts   TicketMessage[]
   auditLogs     AuditLog[]
+  campaignPlays CampaignPlay[]
 }
 
 model OtpCode {
@@ -318,6 +340,7 @@ model ProductVariant {
   flashItems FlashSaleItem[]
   movements  InventoryMovement[]
   alerts     ProductAlert[]
+  campaigns  CampaignProduct[]
 
   @@index([productId])
 }
@@ -403,6 +426,8 @@ model Voucher {
 
   collectedBy UserVoucher[]
   redemptions VoucherRedemption[]
+  campaigns   Campaign[]
+  rewards     CampaignReward[]
 }
 
 model UserVoucher {
@@ -434,12 +459,13 @@ model VoucherRedemption {
 }
 
 model FlashSale {
-  id       String          @id @default(cuid())
-  title    String
-  startsAt DateTime
-  endsAt   DateTime
-  isActive Boolean         @default(true)
-  items    FlashSaleItem[]
+  id        String          @id @default(cuid())
+  title     String
+  startsAt  DateTime
+  endsAt    DateTime
+  isActive  Boolean         @default(true)
+  items     FlashSaleItem[]
+  campaigns Campaign[]
 
   @@index([startsAt, endsAt])
 }
@@ -859,4 +885,107 @@ model AuditLog {
   @@index([createdAt])
   @@index([actorId, createdAt])
   @@index([entity, entityId])
+}
+
+// ───────────────────────── Promo campaigns ─────────────────────────
+// A campaign is a dated, themed promotion shown on the home page right before "Shop by category",
+// with an offer strip under the header on every store page. All customer-facing text is Bangla.
+
+model Campaign {
+  id           String        @id @default(cuid())
+  slug         String        @unique
+  title        String
+  tagline      String?
+  theme        CampaignTheme @default(MEGA_SALE)
+  heroImageUrl String?
+  ctaLabel     String        @default("এখনই কিনুন")
+  ctaHref      String        @default("/flash-sale")
+  startsAt     DateTime
+  endsAt       DateTime
+  // The banner shows "শুরু হতে বাকি" this many hours before startsAt (0–168)
+  teaserHours  Int           @default(24)
+  // When several campaigns overlap, the highest priority is shown
+  priority     Int           @default(0)
+  confetti     Boolean       @default(true)
+  gameEnabled  Boolean       @default(false)
+  gameStyle    GameStyle     @default(MYSTERY_BOX)
+  isActive     Boolean       @default(true)
+  voucherId    String?
+  flashSaleId  String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  voucher   Voucher?             @relation(fields: [voucherId], references: [id], onDelete: SetNull)
+  flashSale FlashSale?           @relation(fields: [flashSaleId], references: [id], onDelete: SetNull)
+  products  CampaignProduct[]
+  ticker    CampaignTickerItem[]
+  rewards   CampaignReward[]
+  plays     CampaignPlay[]
+
+  @@index([isActive, startsAt, endsAt])
+}
+
+// Hand-picked deals, shown at the customer's normal price (sale price if any)
+model CampaignProduct {
+  id         String @id @default(cuid())
+  campaignId String
+  variantId  String
+  sortOrder  Int    @default(0)
+
+  campaign Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  variant  ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, variantId])
+}
+
+model CampaignTickerItem {
+  id         String  @id @default(cuid())
+  campaignId String
+  text       String
+  href       String?
+  sortOrder  Int     @default(0)
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, sortOrder])
+}
+
+model CampaignReward {
+  id         String     @id @default(cuid())
+  campaignId String
+  kind       RewardKind
+  voucherId  String?
+  coins      Int?
+  label      String
+  // Relative odds; the chance is weight / sum of weights of rewards still in stock
+  weight     Int
+  // null = unlimited
+  stock      Int?
+  givenCount Int        @default(0)
+  // Order of the segments on the spin wheel
+  sortOrder  Int        @default(0)
+
+  campaign Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  voucher  Voucher?       @relation(fields: [voucherId], references: [id], onDelete: Restrict)
+  plays    CampaignPlay[]
+
+  @@index([campaignId, sortOrder])
+}
+
+// One play per customer per campaign per Dhaka day
+model CampaignPlay {
+  id         String   @id @default(cuid())
+  campaignId String
+  userId     String
+  // "YYYY-MM-DD" in Asia/Dhaka, so the game resets at midnight Dhaka time
+  playDay    String
+  rewardId   String?
+  createdAt  DateTime @default(now())
+
+  campaign Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reward   CampaignReward? @relation(fields: [rewardId], references: [id], onDelete: SetNull)
+
+  @@unique([campaignId, userId, playDay])
+  @@index([campaignId, playDay])
 }

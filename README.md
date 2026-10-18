@@ -10,6 +10,11 @@ with Steadfast, Pathao and RedX, sales reports with CSV export, Excel catalog im
 bulk price and stock edits, price-drop and back-in-stock alerts, abandoned-cart reminders
 by SMS, and customer support tickets.
 
+**Promo campaigns** run festival-style deal banners on the home page, right before "Shop by
+category": a themed Bangla banner with a countdown, price-slash deal cards, a once-a-day mystery
+box or spin wheel, and an offer strip under the header. Staff schedule them in
+**Admin → Marketing → Campaigns**.
+
 The store is called **Tuktak Bazaar** (টুকটাক বাজার) and will live at tuktakbazaar.com. The name customers see
 comes from **Admin → Settings → Store name**; the Bangla wordmark is in `apps/web/components/store/logo.tsx`.
 
@@ -20,7 +25,7 @@ comes from **Admin → Settings → Store name**; the Bangla wordmark is in `app
 | API | NestJS 11, Prisma 6, PostgreSQL 16 (with `pg_trgm` for fuzzy search) |
 | Web | Next.js 16 (App Router), React 19, Tailwind CSS 4 |
 | Jobs | `@nestjs/schedule` inside the API (unpaid orders, payments, alerts, cart reminders, courier status) |
-| Tests | `apps/api/test/e2e.ts` — 124 checks over checkout, payments, stock races, returns, staff permissions, couriers, reports, imports, alerts and support |
+| Tests | `apps/api/test/e2e.ts` — 163 checks over checkout, payments, stock races, returns, staff permissions, couriers, reports, imports, alerts, support and promo campaigns |
 
 ```
 tuktak-bazaar/
@@ -139,3 +144,12 @@ How it works, the server layout and how to roll back are in [`deploy/README.md`]
   transaction. Stock changes land in the inventory movement log.
 - **Alerts** compare against the price the customer saw (flash prices included) and claim
   each alert before sending, so nobody is notified twice.
+- **Promo campaigns** (`apps/api/src/campaigns/`, `apps/web/components/store/campaign/`).
+  The highest-priority active campaign whose teaser or live window covers now is shown.
+  Countdowns run on the server's clock (phones are often minutes off), and the block turns
+  from teaser to live and disappears at the end without a reload. The daily game is decided
+  on the server: one play per customer per Dhaka day (a unique key), the reward is picked by
+  weight among rewards with stock left and claimed with a conditional update, so 20 plays at
+  once can't hand out more than the stock. Flash prices on deal cards only count while that
+  flash sale runs. All shopper-facing campaign text is Bangla. Animations use transform and
+  opacity only (about 11 KB of gzipped JavaScript in total) and switch off for reduced motion.

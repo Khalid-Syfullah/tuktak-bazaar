@@ -49,11 +49,13 @@ export function pct(original: number, price: number): number {
 export class PricingService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Flash-sale items running right now that still have stock under their cap. Cheapest wins on overlap. */
-  async activeFlash(variantIds: string[], db: Db = this.prisma): Promise<Map<string, ActiveFlash>> {
+  /**
+   * Flash-sale items running at `now` (the real time, except in a campaign preview of another moment) that still
+   * have stock under their cap. Cheapest wins on overlap.
+   */
+  async activeFlash(variantIds: string[], db: Db = this.prisma, now = new Date()): Promise<Map<string, ActiveFlash>> {
     const map = new Map<string, ActiveFlash>();
     if (!variantIds.length) return map;
-    const now = new Date();
     const items = await db.flashSaleItem.findMany({
       where: {
         variantId: { in: variantIds },

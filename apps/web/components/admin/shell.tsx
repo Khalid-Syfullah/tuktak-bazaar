@@ -12,6 +12,7 @@ import {
   Image as ImageIcon,
   Layers,
   LogOut,
+  Megaphone,
   Menu,
   MessageCircleQuestion,
   MessageSquare,
@@ -55,6 +56,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     { href: '/admin/flash-sales', label: 'Flash sales', icon: Zap, perm: 'MARKETING' },
     { href: '/admin/vouchers', label: 'Vouchers', icon: BadgePercent, perm: 'MARKETING' },
     { href: '/admin/banners', label: 'Banners', icon: ImageIcon, perm: 'MARKETING' },
+    { href: '/admin/campaigns', label: 'Campaigns', icon: Megaphone, perm: 'MARKETING' },
   ] },
   { group: 'Customer care', items: [
     { href: '/admin/tickets', label: 'Support tickets', icon: LifeBuoy, perm: 'SUPPORT' },
