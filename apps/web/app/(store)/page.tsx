@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { CampaignBlock } from '@/components/store/campaign/campaign-block';
+import { CategoryGrid } from '@/components/store/category-grid';
 import { FlashStrip } from '@/components/store/flash-strip';
 import { HeroCarousel } from '@/components/store/hero-carousel';
 import { HomeSide } from '@/components/store/home-side';
@@ -55,22 +56,9 @@ export default async function HomePage() {
             All categories
           </Link>
         </div>
-        <div className="no-scrollbar -mx-3 flex gap-2 overflow-x-auto px-3 sm:mx-0 sm:grid sm:grid-cols-6 sm:gap-3 sm:overflow-visible sm:px-0 lg:grid-cols-9">
-          {subcategories.map((c) => (
-            <Link
-              key={c.id}
-              href={`/category/${c.slug}`}
-              className="flex w-24 shrink-0 flex-col items-center gap-1.5 rounded-[var(--radius-card)] border border-line bg-white p-2 text-center hover:border-padma/40 sm:w-auto"
-            >
-              {c.imageUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={c.imageUrl} alt="" loading="lazy" className="aspect-square w-full rounded object-cover" />
-              )}
-              <span className="text-[13px] font-medium leading-tight text-ink">{c.name}</span>
-              {c.nameBn && <span className="-mt-1 text-xs text-ink-faint">{c.nameBn}</span>}
-            </Link>
-          ))}
-        </div>
+        <CategoryGrid
+          categories={subcategories.map((c) => ({ id: c.id, slug: c.slug, name: c.name, nameBn: c.nameBn, imageUrl: c.imageUrl }))}
+        />
       </section>
 
       {data.featured.length > 0 && (
