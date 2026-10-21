@@ -1,5 +1,9 @@
 # Tuktak Bazaar — single-vendor e-commerce for Bangladesh
 
+<p align="center">
+  <img src="docs/screenshots/hero.png" alt="Tuktak Bazaar home page on desktop and phone" width="100%">
+</p>
+
 A complete online store with shopping features, built for one seller:
 flash sales, collectible vouchers, coins, photo reviews, product Q&A, returns,
 cash on delivery with refusal-risk scoring, bKash / Nagad / card payments through
@@ -15,8 +19,162 @@ category": a themed Bangla banner with a countdown, price-slash deal cards, a on
 box or spin wheel, and an offer strip under the header. Staff schedule them in
 **Admin → Marketing → Campaigns**.
 
-The store is called **Tuktak Bazaar** (টুকটাক বাজার) and will live at tuktakbazaar.com. The name customers see
+The store is called **Tuktak Bazaar** (টুকটাক বাজার) and is live at [tuktakbazaar.com](https://tuktakbazaar.com). The name customers see
 comes from **Admin → Settings → Store name**; the Bangla wordmark is in `apps/web/components/store/logo.tsx`.
+
+## Screenshots
+
+Storefront screens are from the live site (21 Oct 2026). Pages behind a login (cart, checkout,
+the account area and the admin panel) show the demo data from `npm run db:seed`. Desktop shots are
+a 1440 × 900 browser window and phone shots a 390 × 844 screen. More promo campaign screens are in
+[`docs/screenshots/promo-campaigns`](docs/screenshots/promo-campaigns).
+
+### Storefront
+
+<table>
+  <tr>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/storefront/01-home-desktop.png" width="380" alt="Home page"><br>
+      <b>Home</b><br><sub>Banners, voucher and check-in tiles, shop by category</sub>
+    </td>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/storefront/02-category-desktop.png" width="380" alt="Category page with filters"><br>
+      <b>Category</b><br><sub>Sub-category, brand, price and rating filters</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/storefront/03-product-desktop.png" width="380" alt="Product page"><br>
+      <b>Product page</b><br><sub>Price-drop alert, store vouchers, delivery by district</sub>
+    </td>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/storefront/04-search-desktop.png" width="380" alt="Search results for চাল"><br>
+      <b>Bangla search</b><br><sub>“চাল” finds rice by its Bangla, Banglish and English names</sub>
+    </td>
+  </tr>
+</table>
+
+<table>
+  <tr>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/storefront/05-home-phone.png" width="175" alt="Home page on a phone"><br>
+      <b>Home</b><br><sub>Bottom tab bar on phones</sub>
+    </td>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/storefront/06-categories-phone.png" width="175" alt="All categories on a phone"><br>
+      <b>All categories</b><br><sub>Grouped by department</sub>
+    </td>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/storefront/07-product-phone.png" width="175" alt="Product page on a phone"><br>
+      <b>Product</b><br><sub>Sale price and discount</sub>
+    </td>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/storefront/08-search-phone.png" width="175" alt="Search results for dudh on a phone"><br>
+      <b>Banglish search</b><br><sub>“dudh” finds milk</sub>
+    </td>
+  </tr>
+</table>
+
+### Shopping and account
+
+<table>
+  <tr>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/shopping/01-flash-sale-desktop.png" width="380" alt="Flash sale page"><br>
+      <b>Flash sale</b><br><sub>Countdown, stock left at each price, 2 per customer</sub>
+    </td>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/shopping/02-cart-desktop.png" width="380" alt="Cart"><br>
+      <b>Cart</b><br><sub>Select items, save for later, flash prices, free delivery</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/shopping/03-checkout-desktop.png" width="380" alt="Checkout"><br>
+      <b>Checkout</b><br><sub>Saved address, collected vouchers, pay part with coins</sub>
+    </td>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/shopping/04-order-tracking-desktop.png" width="380" alt="Order tracking"><br>
+      <b>Order tracking</b><br><sub>Status timeline, courier tracking number, invoice</sub>
+    </td>
+  </tr>
+</table>
+
+<table>
+  <tr>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/shopping/05-cart-phone.png" width="175" alt="Cart on a phone"><br>
+      <b>Cart</b><br><sub>Quantity and save for later</sub>
+    </td>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/shopping/06-account-phone.png" width="175" alt="Account overview on a phone"><br>
+      <b>Account</b><br><sub>Coins, vouchers and orders</sub>
+    </td>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/shopping/07-order-tracking-phone.png" width="175" alt="Order tracking on a phone"><br>
+      <b>Order tracking</b><br><sub>Shipped with Steadfast</sub>
+    </td>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/shopping/08-coins-phone.png" width="175" alt="Coins page on a phone"><br>
+      <b>Coins</b><br><sub>Check-in and coin history</sub>
+    </td>
+  </tr>
+</table>
+
+### Admin panel
+
+<table>
+  <tr>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/admin/01-dashboard.png" width="380" alt="Admin dashboard"><br>
+      <b>Dashboard</b><br><sub>Today's numbers, 30-day revenue, to-do list</sub>
+    </td>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/admin/02-orders.png" width="380" alt="Admin orders list"><br>
+      <b>Orders</b><br><sub>Status tabs, payment filters, COD risk score</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/admin/03-order-detail.png" width="380" alt="Admin order detail"><br>
+      <b>Order detail</b><br><sub>Book a courier, packing slip, invoice, timeline</sub>
+    </td>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/admin/04-products.png" width="380" alt="Admin products list"><br>
+      <b>Products</b><br><sub>Stock, low-stock flags, archive</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/admin/05-import.png" width="380" alt="Excel import and export"><br>
+      <b>Import and export</b><br><sub>Excel catalog, every change previewed before it is saved</sub>
+    </td>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/admin/06-reports.png" width="380" alt="Sales reports"><br>
+      <b>Reports</b><br><sub>Revenue, orders, cancellation and failed-delivery rates, CSV</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/admin/07-campaigns.png" width="380" alt="Promo campaigns"><br>
+      <b>Promo campaigns</b><br><sub>Scheduled festival campaigns with a daily game</sub>
+    </td>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/admin/08-staff.png" width="380" alt="Staff and permissions"><br>
+      <b>Staff</b><br><sub>Owner and staff with per-area permissions</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/admin/09-audit-log.png" width="380" alt="Audit log"><br>
+      <b>Audit log</b><br><sub>Who changed what, and every text message sent</sub>
+    </td>
+    <td align="center" valign="top">
+      <img src="docs/screenshots/admin/10-settings.png" width="380" alt="Store settings"><br>
+      <b>Settings</b><br><sub>Delivery zones and fees, free-delivery threshold</sub>
+    </td>
+  </tr>
+</table>
 
 ## Stack
 
